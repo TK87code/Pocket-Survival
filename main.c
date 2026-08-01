@@ -1,20 +1,29 @@
 #include "pocket.h"
+#include <stdint.h> // uintx_ts
+
+// === Definitions ===
 
 #define MAP_COL 80
 #define MAP_ROW 24
 
-enum terrain {
-	TERRAIN_SEA,
-	TERRAIN_SAND,
-	TERRAIN_GRASS,
+#define FLAG_WALKABLE (1 << 0)
+
+enum terrain_id {
+	TERRAIN_DEEP_WATER = 0,
+	TERRAIN_GRAVEL,
+	TERRAIN_SOIL,
 };
 
-struct map_cell {
-	enum terrain type;
-	int is_walkable;
+struct terrain_def {
 	enum pkt_color fcolor;
 	enum pkt_color bcolor;
 	char symbol;
+};
+
+struct map_cell { // 4 bytes
+	uint16_t reserved; // I added this to control save data size and contents
+	uint8_t terrain; // store enum terrain_id
+	uint8_t bitflags;
 };
 
 
@@ -26,37 +35,55 @@ struct game_state {
 	int cursor_y;
 };
 
+// === Globals ===
+
+struct terrain_def terrains[] = {
+	[TERRAIN_DEEP_WATER] = {PKT_COLOR_BLUE, PKT_COLOR_BLACK, '~'},
+	[TERRAIN_GRAVEL] = {PKT_COLOR_YELLOW, PKT_COLOR_BLACK, ':'},
+	[TERRAIN_SOIL] = {PKT_COLOR_GREEN, PKT_COLOR_BLACK, ','},
+};
+
+// === Proto Types ===
+
+// callbacks
+void game_init(void *user_data);
+void game_update(void *user_data, float dt);
+void game_draw(void *user_data);
+
+int main(void) 
+{
+	struct game_state state = {0};
+
+	struct pkt_config config = pkt_get_default_config();
+	config.on_init = game_init;
+	config.user_data = &state;
+
+	if (pkt_init(&config) < 0) {
+		return -1;
+	}
+	
+	struct pkt_scene scene = {0};
+	scene.on_update = game_update;
+	scene.on_draw = game_draw;
+	scene.user_data = &state;
+
+	pkt_register_scene(0, &scene);
+	pkt_swap_scene(0);
+
+	pkt_ignite();
+	pkt_cleanup();
+
+	return 0;
+}
+
 void game_init(void *user_data) 
 {
 	struct game_state *state = (struct game_state *)user_data;
 
 	for (int y = 0; y < MAP_ROW; y++) {
 		for (int x = 0; x < MAP_COL; x++) {
-			state->map[y][x].type = TERRAIN_SEA;
-			state->map[y][x].is_walkable = 0;
-			state->map[y][x].fcolor = PKT_COLOR_BLUE;
-			state->map[y][x].bcolor = PKT_COLOR_BLACK;
-			state->map[y][x].symbol = '~';
-		}
-	}
-
-	for (int y = 4; y < 20; y++) {
-		for (int x = 10; x < 70; x++) {
-			state->map[y][x].type = TERRAIN_SEA;
-			state->map[y][x].is_walkable = 1;
-			state->map[y][x].fcolor = PKT_COLOR_YELLOW;
-			state->map[y][x].bcolor = PKT_COLOR_BLACK;
-			state->map[y][x].symbol = ':';
-		}
-	}
-
-	for (int y = 6; y < 18; y++) {
-		for (int x = 15; x < 65; x++) {
-			state->map[y][x].type = TERRAIN_SEA;
-			state->map[y][x].is_walkable = 1;
-			state->map[y][x].fcolor = PKT_COLOR_GREEN;
-			state->map[y][x].bcolor = PKT_COLOR_BLACK;
-			state->map[y][x].symbol = ',';
+			state->map[y][x].terrain = TERRAIN_DEEP_WATER;
+			state->map[y][x].bitflags = 0;
 		}
 	}
 
@@ -87,37 +114,12 @@ void game_draw(void *user_data)
 	
 	for (int y = 0; y < MAP_ROW; y++) {
 		for (int x = 0; x < MAP_COL; x++) {
-			pkt_putc(x, y, state->map[y][x].fcolor, state->map[y][x].bcolor, state->map[y][x].symbol);
+			uint8_t id = state->map[y][x].terrain;
+			struct terrain_def def = terrains[id];
+			pkt_putc(x, y, def.fcolor, def.bcolor, def.symbol);
 		}
 	}
 
-	pkt_puts(state->player_x, state->player_y, PKT_COLOR_WHITE, PKT_COLOR_BLACK, "☺");
+	pkt_puts(state->player_x, state->player_y, PKT_COLOR_WHITE, PKT_COLOR_BLACK, "@");
 	pkt_putc(state->cursor_x, state->cursor_y, PKT_COLOR_YELLOW, PKT_COLOR_BLACK, 'X');
 }
-
-int main(void) 
-{
-	struct game_state state = {0};
-
-	struct pkt_config config = pkt_get_default_config();
-	config.on_init = game_init;
-	config.user_data = &state;
-
-	if (pkt_init(&config) < 0) {
-		return -1;
-	}
-	
-	struct pkt_scene scene = {0};
-	scene.on_update = game_update;
-	scene.on_draw = game_draw;
-	scene.user_data = &state;
-
-	pkt_register_scene(0, &scene);
-	pkt_swap_scene(0);
-
-	pkt_ignite();
-	pkt_cleanup();
-
-	return 0;
-}
-
