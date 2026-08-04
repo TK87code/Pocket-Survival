@@ -38,12 +38,11 @@ struct terrain_def {
 };
 
 struct map_cell { // 4 bytes
-	uint8_t reserved; // I added this to control save data size and contents
-	uint8_t object;
-	uint8_t terrain; // store enum terrain_id
-	uint8_t bitflags;
+	uint8_t reserved;	// I added this to control save data size and contents
+	uint8_t object;		// Store enum object_id
+	uint8_t terrain;	// store enum terrain_id
+	uint8_t bitflags;	// Bitflags to store terrain state (e.g., roofed or burning)
 };
-
 
 struct game_state {
 	struct map_cell map[MAP_ROW][MAP_COL];
@@ -87,6 +86,8 @@ static float hash2d(int x, int y, int seed);
 static float smooth_interp(float a, float b, float t);
 static float value_noise_2d(float x, float y, int seed, float scale);
 static void generate_map(struct game_state *s);
+static void draw_objects(char **str, char *sym, enum pkt_color *fc, unsigned int *attr, unsigned int o);
+static void diversify_terrains(char *sym, enum pkt_color *fc, unsigned int t, uint32_t sudo_rando);	
 
 int main(int argc, char *argv[]) 
 {
@@ -185,68 +186,32 @@ void game_draw(void *user_data)
 	struct game_state *state = (struct game_state *)user_data;
 	pkt_win_box(&state->win_command);
 
-	pkt_win_puts(&state->win_status, 2, 0, " STATUS ");
 	pkt_win_puts(&state->win_command, 2, 0, " COMMANDS ");
-	pkt_win_puts(&state->win_log, 2, 0, " LOGS ");
-
 
 	for (int y = 0; y < VIEWPORT_ROW; y++) {
 		for (int x = 0; x < VIEWPORT_COL; x++) {
 			int wx = state->cam_x + x;
 			int wy = state->cam_y + y;
 			unsigned int t = state->map[wy][wx].terrain;
-			
 			char sym = terrains[t].symbol;
+			char *str = NULL;
 			enum pkt_color fc = terrains[t].fcolor;
+
 			uint32_t sudo_rando = ((uint32_t)wx * 374761393 ^ (uint32_t)wy * 668265263) % 100;
-
-			if (t == TERRAIN_SOIL) {
-				if (sudo_rando < 10) {
-					sym = ',';
-					fc = 136;
-				} else if (sudo_rando < 20) {
-					sym = '`';
-					fc = 138;
-				}
-			} else if (t == TERRAIN_GRAVEL) {
-				if (sudo_rando < 15) {
-					sym = '.';
-					fc = 243;
-				} else if (sudo_rando < 30) {
-					sym = ';';
-					fc = 245;
-				}
-			} else if (t == TERRAIN_DEEP_WATER || t == TERRAIN_WATER) {
-				if (sudo_rando < 20) {
-					sym = '=';
-					fc = 27;
-				}
-			} else if (t == TERRAIN_MOUNTAIN) {
-				if (sudo_rando < 15) {
-					fc = 235;
-				} else if (sudo_rando < 25) {
-					fc = 239;
-				}
-			} else if (t == TERRAIN_MUD) {
-				if (sudo_rando < 20) {
-					fc = 58;
-				}
-			}
 			
-			unsigned int o = state->map[wy][wx].object;
-			if (o == OBJ_TREE) {
-				sym = 'T';
-				fc = 22;
-			} else if (o == OBJ_ROCK) {
-				sym = 'O';
-				fc = 236;
-			} else if (o == OBJ_GRASS) {
-				sym = '"';
-				fc = 76;
-			}
+			diversify_terrains(&sym, &fc, t, sudo_rando);	
 
-			pkt_win_putc_color(&state->win_map, x, y, 
-					fc, terrains[t].bcolor, PKT_ATTR_NONE, sym); 
+			unsigned int o = state->map[wy][wx].object;
+			unsigned int attr = 0;
+
+			draw_objects(&str, &sym, &fc, &attr, o);	
+			
+			if (!str)
+				pkt_win_putc_color(&state->win_map, x, y, 
+						fc, terrains[t].bcolor, attr, sym);
+			else
+				pkt_win_puts_color(&state->win_map, x, y, 
+						fc, terrains[t].bcolor, attr, str); 
 		}
 	}
 
@@ -353,5 +318,57 @@ static void generate_map(struct game_state *s)
 			s->map[y][x].object = (uint8_t)obj;
 			s->map[y][x].bitflags = 0;
 		}
+	}
+}
+
+static void diversify_terrains(char *sym, enum pkt_color *fc, unsigned int t, uint32_t sudo_rando)
+{
+	if (t == TERRAIN_SOIL) {
+		if (sudo_rando < 10) {
+			*sym = ',';
+			*fc = 136;
+		} else if (sudo_rando < 20) {
+			*sym = '`';
+			*fc = 138;
+		}
+	} else if (t == TERRAIN_GRAVEL) {
+		if (sudo_rando < 15) {
+			*sym = '.';
+			*fc = 243;
+		} else if (sudo_rando < 30) {
+			*sym = ';';
+			*fc = 245;
+		}
+	} else if (t == TERRAIN_DEEP_WATER || t == TERRAIN_WATER) {
+		if (sudo_rando < 20) {
+			*sym = '=';
+			*fc = 27;
+		}
+	} else if (t == TERRAIN_MOUNTAIN) {
+		if (sudo_rando < 15) {
+			*fc = 235;
+		} else if (sudo_rando < 25) {
+			*fc = 239;
+		}
+	} else if (t == TERRAIN_MUD) {
+		if (sudo_rando < 20) {
+			*fc = 58;
+		}
+	}
+}
+
+static void draw_objects(char **str, char *sym, enum pkt_color *fc, unsigned int *attr, unsigned int o)
+{
+	if (o == OBJ_TREE) {
+		*str = "♣";
+		*fc = 22;
+		*attr = PKT_ATTR_BOLD;
+	} else if (o == OBJ_ROCK) {
+		*sym = 'O';
+		*fc = 236;
+		*attr = PKT_ATTR_BOLD;
+	} else if (o == OBJ_GRASS) {
+		*sym = '"';
+		*fc = 76;
 	}
 }
