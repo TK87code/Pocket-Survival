@@ -1,0 +1,694 @@
+# （仮）Pocket Survival - 詳細設計書 (v1.1 最新版)
+
+## 0. プロジェクト概要
+
+### 0.1 サマリー
+
+* タイトル: （仮）Pocket Survival（ポケットサバイバル）
+* ジャンル: 箱庭系サバイバル・シミュレーション（スローテンポ型・Dwarf Fortress & Rim Worldインスパイア）
+* 概要: ファンタジー世界。引退した中年戦士が魔物と人間の世界のはざまにある土地を購入し、ペットの犬とともにサバイバルする様子を神視点で指示・観察するシミュレーションゲーム。キャラクターは現状一人のキャラクターと一匹の犬を想定しているが、将来的に仲間が増える仕様も考えている。
+* 開発理念: 外部ライブラリを一切使用せず、C言語標準機能とPocketエンジンを用いて、データ構造を中心とした美しく拡張性の高いアーキテクチャを構築する。
+* 描画制約: ターミナルの文字幅問題（東アジアの文字幅問題）を完全に回避するため、すべてのゲーム内オブジェクト・地形・UIは半角文字（ASCII）のみで構成する。
+* 開発の目的: ユーザーが自作したコンソール専門ゲームエンジン「Pocket」を使って初の本格的なゲーム開発に挑戦する。この開発を通じ、エンジンの拡張機能の追加や磨き上げを行う。
+
+### 0.2 プロジェクトのルール
+
+* [超重要！！！！！] AIの役割（メンター）: 
+答えのコードを丸投げせず、エンジンのアーキテクチャ設計や本質的なアプローチのヒントを提示し、マスターの思考を引き出すこと。AIはマスターの学習を助ける教師役に徹すること。時にはクイズを出したり、マスターの理解度の確認などを挟みながら、コードの実装は細かくステップに分けて実装していくこと。「AIはコードを貼るのではなく、自然言語でステップを説明し、ユーザーがそれをコードに翻訳する」のがベスト。
+
+* ドキュメントの保守: 
+設計書の中で変更、更新、追記する必要が生じた場合、その都度新しいテキストを「一切の省略なく」出力してコンテキストを同期すること。この設計書1枚を共有すればAIと人間の再共有が完了することが最大の目的。
+
+## 1. 画面レイアウト・UIアーキテクチャ (スプリットビュー方式)
+ゲーム画面は大型ターミナルを前提とした分割レイアウトを採用し、左側で「世界の観察」、右側で「指示・管理」を行う。
+
+- 全体パネル　W120 * H40
+- マップビューポート　W72 * H36 （見た目を正方形にしたい）
+- ステータス枠　W80 * H1 （ビューポートの下部）
+- ログ枠　w80 * h1 （ビューポートの上部）
+- コマンド枠　w40 * h40（パディングなし）
+
++-------------------------------------------------------+-------------------------+
+|____________________LOG________________________________|                         |
+|               MAP VIEWPORT (LEFT)                     |                         |
+|         (広大なマップの一部をカメラで映す)            | Time: Day 3 - 14:25     |
+|                                                       |                         |
+|                   ~   ~   ~   .   .                   | [COMMANDS]              |
+|                 ~   ~   .   .   "   "                 | 1. Move to...           |
+|               ~   .   .   "   "   "   "               | 2. Cut down tree        |
+|               .   .   "   "   @   "   "               | 3. Craft item           |
+|                 .   "   "   "   "                     | 4. Rest                 |
+|                                                       |                         |
+|                                                       |                         |
+|_______________________________________________________|                         |
+|      HP: 100 / Stamina: 85      Time: Day 3 - 14:25   |                         |
++-------------------------------------------------------+-------------------------+
+
+* マップビューポート（左側）: プレイヤーやキャラクター周辺の広めな視界を常に確保し、ゆったりとしたサバイバル風景を観察する。
+* UI / コマンドパネル（右側）: 主人公のステータス、現在時刻、AIへの指示コマンド一覧（「木を切る」「物を作る」など）をリアルタイム表示する。
+
+## 2. マップの仕様
+
+マップサイズは250×250の一面マップ（Z軸なし）。全体で62,500マスのため、チャンク分割は行わず、ゲーム開始時に全マップをメモリに一括生成する。
+
+### 2.1 遠征とマップの永続化（セーブ＆ロード）
+プレイヤーは遠征などで別マップに移動することも可能。
+マップ全体（約250KB）およびアイテム・エンティティのメモリ状態を、標準C関数の fwrite/fread を用いてバイナリファイルとして直接ディスクに書き出し・読み込みを行う。これにより、遠征時の拠点の保存やマップの切り替えを瞬時に実行する。
+
+## 2.2 地形生成アルゴリズム（2軸プロシージャル生成）
+外部ライブラリを一切使わず、数学的アプローチによってセーブデータごとに異なる自然な地形を自動生成する。
+1セル＝1メートルのスケールとし、移動速度やマップ生成はそのスケールに見合ったものに調整する。
+
+* 方針: ノイズ生成関数の完全自作（フラクタル構造 / オクターブ合成）
+* バイオーム判定（標高 × 湿度の2軸ノイズ合成）:
+  「標高（Elevation）」と「湿度（Moisture）」の2つの独立したノイズマップを生成し、その組み合わせでバイオームを動的にマッピングする。これにより、同じ標高でも場所によって異なる地形（土壌や泥）が生成される有機的な世界を実現する。
+
+### 2.2.1 地形（バイオーム）マトリクス一覧
+| 標高（ノイズ1） | 湿度: 低（乾燥） | 湿度: 中（標準） | 湿度: 高（湿潤） |
+| :--- | :--- | :--- | :--- |
+| 高い (0.7〜1.0) | 岩山 (Mountain) | 岩山 (Mountain) | 岩山 (Mountain) |
+| 中間 (0.3〜0.7) | 砂利・砂 (Gravel) | 土壌 (Soil) | 泥・湿地 (Mud) |
+| 低い (0.0〜0.3) | 浅瀬 (Shallows)* | 水域 (Water) | 深水 (Deep Water) |
+
+* 土壌（Soil）: 作物の栽培に適しており、移動や建築も問題ない。
+* 砂利・砂（Gravel）: 栽培効率が低い、または建築コストや移動速度に影響が出る。
+* 泥・湿地（Mud）: 移動速度が大きく低下し、重い建物を建てられない難所。
+* 水域・深水（Water）: 人や動物が泳ぐ、または移動できない障害物になる。
+* 岩山・山岳（Mountain）: 採掘で資材を得られるほか、天然の防壁として拠点防衛に活用できる。
+
+### 2.3 オブジェクトの重なりと移動コスト
+- 木や草などの自然オブジェクトは重なれるがそれぞれ別個に設定された移動コストがかかる仕様にする。
+- クラフトオブジェクトは移動コストがかかるもの、そもそも通行不可のものがある
+
+### 2.4 アイテム・リソース管理（フラグ＆リスト分離方式）
+マップ上のアイテム（木材、石材など）は、セルの4バイト制約を維持するため、独立した配列（Entity List）としてグローバル管理する。
+描画やAIの移動判定を高速化するため、アイテムが存在するマスにはマップセルの `flags` に `FLAG_HAS_ITEM` を立てる「ハイブリッド型」を採用する。
+キャラクターのインベントリは、複数個の同種アイテムをまとめて運搬できる仕様とする。
+
+## 4. 開発ロードマップ
+
+* ステップ1：マップ生成と永続化フェーズ
+  * 自作ノイズ関数によるプロシージャル地形生成の実装
+  * 250×250マップ構造体と地形辞書（Flyweightパターン）の実装
+  * バイナリファイルを用いたセーブ＆ロード（遠征システム）の基礎実装
+  * スクロール描画の実装
+
+* ステップ2：キャラクター自律AIフェーズ
+  * 主人公（およびペット）のエンティティ構造体定義
+  * ステートマシンとパスファインディング（経路探索）による基本移動行動の実装
+
+* ステップ3：指示駆動AIフェーズ (タスクキューシステム)
+  * グローバル・タスクキューの構築（プレイヤーの指示をタスク化して配列に積む）
+  * タスクのライフサイクル（発生 → 割当 → 資源検索・確保 → 実行 → 完了）を管理するステートマシンの実装
+  * 障害物を迂回して目的地へ向かう経路探索（A*アルゴリズム）の実装
+
+* ステップ4：クラフトとリソース管理
+  * 現状使用可能な資源の検出（木材、石材など）
+  * 資源を用いた建築・クラフト機能の実装
+
+* ステップ5：環境に合わせてゲーム内の文字（タイル）を動的に切り替える
+  * ロケールによって半角のつもりで書いたタイルが全角になるなどの問題がある。相手のロケールに合わせてタイルを動的に切り替える処理をして、英語圏など半角の地域（＆英語等幅フォント）ではそのまま、日本語など全角のロケールではすべての出力を全角に切り替える処理をしたい。
+  * ロケールの取得は簡単そうだが、フォント問題をどうするか。
+　* ついでに、このゲームは最初から英語と日本語の両方に対応させたいので、簡単に言語表示を切り替えれるような設計にしたい。コードをどうやってかき分けるか分からない。
+
+* ステップ6：危機イベント実装
+  * キャラクターの生命を脅かすランダム生成イベントの間隔発生（ゲーム難易度調整）
+
+* ステップ7：その他（優先度低い）
+  * バイナリファイルを用いたセーブ＆ロード（遠征システム）の基礎実装
+
+## 5. ユーザー自作のゲームエンジン詳細
+
+### 5.1 エンジンのAPI
+以下が現時点でのゲームエンジンのAPIである。なお、AIは、コードの実装部分について不明な点がある場合はユーザーにその旨を報告し、コードの共有を促すこと。
+
+#### 5.1.0 Pocket.h（コアAPI）
+```
+/*
+ * Pocket Public API
+ *
+ */
+#ifndef POCKET_H
+#define POCKET_H
+
+#include <stddef.h> // size_t
+#include <stdint.h> // uintxx_t
+
+// === Engine CORE API === 
+       
+/**
+ * @brief Color code to specify font and background colors.
+ *
+ * @note User can use these pkt_color list, or pass ANSI 256 color codes(0 to 255). 
+ */
+enum pkt_color {
+	PKT_COLOR_DEFAULT = -1,
+	PKT_COLOR_BLACK = 0, 
+	PKT_COLOR_RED = 1,
+	PKT_COLOR_GREEN = 2,
+	PKT_COLOR_YELLOW = 3,
+	PKT_COLOR_BLUE = 4,
+	PKT_COLOR_MAGENTA = 5,
+	PKT_COLOR_CYAN = 6,
+	PKT_COLOR_WHITE = 7,
+};
+
+// Character attributes
+// [NOTE] This is enabled by ANSI escape sequence, and some attribute is not supported depends on user's terminal.
+enum pkt_attr {
+	PKT_ATTR_NONE = 0,
+	PKT_ATTR_BOLD = (1 << 0), 
+	PKT_ATTR_UNDERLINE = (1 << 1), 
+	PKT_ATTR_REVERSE = (1 << 2),
+	PKT_ATTR_BLINK = (1 << 3),
+	PKT_ATTR_FASTBLINK = (1 << 4),
+};
+
+struct pkt_config {
+	void *user_data; 			// Pointer to store user data structure. Default = NULL
+	void (*on_init)(void *user_data); 	//func pointer for user initialization. This must be set.
+	int target_fps; 			// Target fps value that user want to achieve. Default = 60
+	enum pkt_color default_fcolor; 		// Game's default font color. Default = PKT_COLOR_WHITE
+	enum pkt_color default_bcolor; 		// Game's default background color. Default = PKT_COLOR_BLACK
+};
+
+/**
+ * @brief  Get a default configuration structure initialized with safe values.
+ * Use this configuration and change parameters you want to customize.
+ *
+ * @return struct pkt_config with default parameters. 
+ */
+struct pkt_config pkt_get_default_config(void);
+
+/**
+ * @brief  Initialize engine. This disables some terminal attributes
+ * under the hood.
+ * 
+ * @param  config structure passed by user.
+ *
+ * @return  0 on success. 
+ * ERROR-> -1: Failed to initialize terminal -2: invalid config.
+ */
+int pkt_init(struct pkt_config *config);
+
+/**
+ * @brief  Start the game loop
+ * 
+ * @return  0 on success.
+ */
+int pkt_ignite(void);
+
+/**
+ * @brief  This function stops a game loop.
+ * 
+ * @return  0 on success.
+ */
+int pkt_quit(void);
+
+/**
+ * @brief  Clean up engine and restore terminal attributes.
+ * 
+ * @warning MUST call this function before exiting program, otherwise the user terminal screen
+ * will be broken (some attributes will still be disabled).
+ *
+ * @return  0 on success.
+ */
+int pkt_cleanup(void);
+
+// === Event Module API ===
+
+enum pkt_event_type{
+	PKT_EVENT_QUIT,
+	PKT_EVENT_KEY_PRESSED,
+	PKT_EVENT_RESIZE,
+};
+
+struct pkt_event {
+	enum pkt_event_type type;
+	union {
+		struct {
+			int key_code;
+		} key;
+		struct {
+			int cols;
+			int rows;
+		}resize;
+	} data;
+};
+
+enum pkt_keycode { 
+	PKT_KEY_ENTER = 10,
+	PKT_KEK_ESCAPE = 27,
+	PKT_KEY_SPACE = 32,
+	PKT_KEY_UP = 1000, // Avoiding confliction with ASCII
+	PKT_KEY_DOWN,
+	PKT_KEY_RIGHT,
+	PKT_KEY_LEFT,
+	PKT_KEY_ESCAPE
+};
+
+/**
+ * @brief  Poll event from the engine and store the memory address to the oldest event
+ * to the event pointer provided. 
+ *
+ * @warning  DO NOT use standard C input functions (like getchar() or scanf())
+ * inside your scene callbacks. They will blocl the engine's game loop and breal the
+ * frame rate. Always use this event poller to get user inputs.
+ *
+ * @param  event A pointer to an event struct.
+ *
+ * @return  0 on success, -1 if no event is in queue.
+ */
+int pkt_poll_event(struct pkt_event *event);
+
+// === Terminal Module API === 
+
+/**
+ * @brief Get current terminal size and store it to the pointer passed as parameters. 
+ *
+ * @param  out_cols A pointer to store current terminal colmmuns.
+ * @param  out_rows A pointer to store current terminal rows.
+ *
+ * @return 0 on success. 
+ */
+int pkt_get_termsize(int *out_cols, int *out_rows);
+
+/**
+ * @brief  Put a 1 byte character at specified x and y coordinates.
+ *
+ * @param  x X position(columns)
+ * @param  y Y position(rows)
+ * @param  c A character to put on screen.
+ *
+ * @return  0 on success. -1 when invalid x, y passed.
+ */
+int pkt_putc(int x, int y, char c);
+
+/**
+ * @brief  Put a 1 byte character at specified x and y coordinates with colors and attributes.
+ *
+ * @param  x X position(columns)
+ * @param  y Y position(rows)
+ * @param  fcolor Font color (e.g., PKT_COLOR_RED)
+ * @param  bcolor Background color
+ * @param  attr Bitmask of character attributes. Can be a bitwise OR of "enum pkt_attr"
+ *              values (e.g., PKT_ATTR_BOLD | PKT_ATTR_UNDERLINE). Pass PKT_ATTR_NONE for nomal text.
+ * @param  c A character to put on screen
+ *
+ * @return 0 on success -1 when invalid x, y, or color code passed. 
+ */
+int pkt_putc_color(int x, int y, enum pkt_color fcolor, enum pkt_color bcolor, unsigned int attr, char c);
+
+/**
+ * @brief  Put a string or multi-byte character(UTF-8) at specified x and y coordinates.
+ *
+ * @param  x X position(columns)
+ * @param  y y position(rows)
+ * @param  str A string to put on screen
+ *
+ * @return 0 on success, -1 when invalid x or y passed.
+ */
+int pkt_puts(int x, int y, const char *str);
+
+/**
+ * @brief  Put a string or multi byte character(UTF-8) at specified x and y coordinates
+ * 	   with color and attributes.
+ *
+ * @param  x x position(col)
+ * @param  y y position(row)
+ * @param  fcolor Font color (e.g., PKT_COLOR_RED) 
+ * @param  bcolor Background color
+ * @param  attr Bitmask of character attributes. Can be a bitwise OR of "enum pkt_attr"
+ *              values (e.g., PKT_ATTR_BOLD | PKT_ATTR_UNDERLINE). Pass PKT_ATTR_NONE for nomal text.
+ * @param  str A string to put 
+ *
+ * @return 0 on success, -1 when invalid parameters passed.
+ */
+int pkt_puts_color(int x, int y, enum pkt_color fcolor, enum pkt_color bcolor, unsigned int attr, const char *str);
+
+/**
+ * @brief Print a formatted string at x and y coordinates. 
+ *
+ * @param  x X position(columns)
+ * @param  y Y position(rows)
+ * @param  fmt A formatted string to print
+ *
+ * @return 0 on success, -1 when invalid x or y passed.
+ */
+int pkt_printf(int x, int y, const char *fmt, ...);
+
+/**
+ * @brief  Print a formatted string at x and y coordinates with color and attributes.
+ *
+ * @param  x x position (columns)
+ * @param  y y positon (rows)
+ * @param  fcolor Font color (e.g., PKT_COLOR_RED). You also can pass ANSI 256 color code here.
+ * @param  bcolor Background color
+ * @param  attr Bitmask of character attributes. Can be a bitwise OR of "enum pkt_attr"
+ *              values (e.g., PKT_ATTR_BOLD | PKT_ATTR_UNDERLINE). Pass PKT_ATTR_NONE for nomal text.
+ * @param  fmt A formatted string to print
+ *
+ * @return 0 on success, -1 when invalid parameters passed.
+ */
+int pkt_printf_color(int x, int y, enum pkt_color fcolor, enum pkt_color bcolor, unsigned int attr, const char *fmt, ...);
+
+// === Scene Module API ===
+
+struct pkt_scene {
+	void *user_data;
+	// parameters: user data and deltatime
+	void (*on_enter)(void *user_data); // The user defined func which is called once when enter
+	void (*on_update)(void *user_data, float dt); // The user defined func called every frame
+	void (*on_draw)(void *user_data); // The user defined func called every frame
+	void (*on_exit)(void *user_data); // The user defined func called once when exit
+};
+
+/**
+ * @brief Register user-defined scene. Scene ID must be 0 or greater and
+ *        does not exceed PKT_MAX_SCENES
+ *
+ * @param  scene_id scene id (0 < X < PKT_MAX_SCENES)
+ * @param  scene a pointer to struct pkt_scene
+ *
+ * @return return 0 on success. -1 on failure 
+ */
+int pkt_register_scene(int scene_id, const struct pkt_scene *scene);
+
+/**
+ * @brief Swap to the registered scene specified by ID  
+ *
+ * @param  next_scene_id ID of the next scene which was used when registered
+ *
+ * @return 0 on success ERROR-> -1: Invalid scene id
+ */
+int pkt_swap_scene(int next_scene_id);
+
+/**
+ * @brief Get current scene
+ *
+ * @return Returns scene ID. -1 means no scenes registered yet 
+ */
+int pkt_get_scene(void);
+
+// === Memory Module API ===
+
+// ---------------------------------------------------------
+// 1. Arena Allocator (Linear Allocator)
+// Purpose: Dynamic allocation of variable-sized memory.
+//          Can only be reset entirely at once.
+// ---------------------------------------------------------
+
+struct pkt_arena {
+	unsigned char *base; // pointer to the top of arena
+	size_t size;		// Total size of arena
+	size_t offset;		// How much memory used in arena 
+};
+
+/**
+ * @brief  Allocate memory from the scratch arena.This memory will be automatically reset by the engine at the end of each frames. 
+ *
+ * @warning  DO NOT free memory reserved by this function.
+ * Memory release will be done automatically by the engine at the end of each frames.
+ *
+ * @param  bytes Size in bytes to allocate.
+ *
+ * @return  A pointer to allocated memory space, NULL if out of memory.
+ */
+void *pkt_scratch_alloc(size_t bytes);
+
+/**
+ * @brief Initializes a memory arena with a pre-allocated backing buffer. 
+ *
+ * @param  arena A pointer to the arena structure to initialize.
+ * @param  backing_buffer A pointer to the pre-allocated memory block.
+ * @param  arena_size Total size of the backing buffer in bytes.
+ *
+ * @return 0 on success 
+ */
+int pkt_init_arena(struct pkt_arena *arena, void *backing_buffer, size_t arena_size);
+
+/**
+ * @brief  Allocate memory from the arena by advancing its offset.
+ *
+ * @param  arena A pointer to the arena which gives memory space.
+ * @param  bytes the size of memory to allocate. 
+ *
+ * @return Returns a pointer on success, or NULL if out of memory
+ */
+void *pkt_arena_alloc(struct pkt_arena *arena, size_t bytes);
+
+/**
+ * @brief  Release the memory arena reserved, allowing the memory to be reused. 
+ *
+ * @param  arena A pointer to the arena to free
+ *
+ * @return 0 on success
+ */
+int pkt_reset_arena(struct pkt_arena *arena);
+
+// ---------------------------------------------------------
+// 2. Pool Allocator (Free-List)
+// Purpose: Allocation of fixed-sized blocks.
+//          Allows individual allocation and freeing of elements.
+// ---------------------------------------------------------
+
+struct pkt_pool_node {
+	struct pkt_pool_node *next;
+};
+
+struct pkt_pool_manager {
+	unsigned char *base; 		// Pointer to the memory buffer
+	size_t block_size;		// Size of a single element
+	size_t max_elems;		// Max number of elements
+	struct pkt_pool_node *head;	// Head of the free-list
+};
+
+/**
+ * @brief  Initialize a memory pool with a pre-allocated buffer and block size.
+ * 	   This build a free-list of available blocks internally.
+ *
+ * @param  manager A pointer to the pool manager structure to initialize.
+ * @param  backing_buffer A pre-allocated memory block.
+ * @param  block_size The size of a single element (e.g., sizeof(struct chunk)).
+ * @param  max_elems Maximum number of elements the buffer can hold.
+ *
+ * @return 
+ */
+int pkt_pool_init(struct pkt_pool_manager *manager, void *backing_buffer, size_t block_size, size_t max_elems);
+
+/**
+ * @brief  Allocate a single memory block from the pool's free-list.
+ *
+ * @param  manager A pointer to the memory pool.
+ *
+ * @return A pointer to the a;;ocated block, or NULL if the pool is empty. 
+ */
+void *pkt_pool_alloc(struct pkt_pool_manager *manager);
+
+/**
+ * @brief  Free a memory block back to the pool by prepending it to the free-list.
+ *
+ * @param  manager A pointer to the memory pool.
+ * @param  ptr A pointer to the memory block to free.
+ *
+ * @return 0 on success, -1 if the pointer is invalid. 
+ */
+int pkt_pool_free(struct pkt_pool_manager *manager, void *ptr);
+
+// === Log Module API ===
+
+enum pkt_log_level {
+	PKT_LOG_INFO,
+	PKT_LOG_WARN,
+	PKT_LOG_ERROR
+};
+
+#ifdef PKT_DEBUG
+int __pkt_log_out(enum pkt_log_level level, const char *fmt, ...);
+#define PKT_LOG(level, ...) __pkt_log_out(level, __VA_ARGS__)
+
+#else
+#define PKT_LOG(level, ...) ((void)0)
+
+#endif //#ifdef PKT_DEBUG
+
+#endif //#ifndeg POCKET_H
+
+```
+
+#### 5.1.1 pkt_win.h（サブウインドウ拡張モジュール）
+```
+#ifndef PKT_WIN_H
+#define PKT_WIN_H
+
+#include <stdint.h>
+#include "../pocket.h"
+
+struct pkt_window { // 8 bytes
+	int16_t x;
+	int16_t y;
+	int16_t width;
+	int16_t height;
+};
+
+/**
+ * @brief  Create subwindow structure.
+ *
+ * @param  x x coordinate where subwindow starts.
+ * @param  y y coordinate where subwindow starts.
+ * @param  width subwindow width(columns).
+ * @param  height subwindow height(rows).
+ *
+ * @return A pkt_window structure.
+ */
+struct pkt_window pkt_win_create(int x, int y, int width, int height);
+
+/**
+ * @brief  Put a 1 byte character on the subwindow at local x and y coordinates.
+ *
+ * @param  win A subwindow structure to put character.
+ * @param  x Local x position(columns).
+ * @param  y Local y position(rows).
+ * @param  c A character to put on subwindow.
+ *
+ * @return 0 on success. -1 when invalid x, y passed.
+ */
+int pkt_win_putc(const struct pkt_window *win, int x, int y, char c);
+
+/**
+ * @brief  Put a 1 byte character on subwindow at specified local x and y coordinates with colors and attributes.
+ *
+ * @param  win A subwindow structure to put character.
+ * @param  x Local x position(columns).
+ * @param  y Local y position(rows).
+ * @param  fcolor Font color (e.g., PKT_COLOR_RED). You also can pass ANSI 256 color codes here (e.g., 13).
+ * @param  bcolor Background color
+ * @param  attr Bitmask of character attributes. Can be a bitwise OR of "enum pkt_attr"
+ *              values (e.g., PKT_ATTR_BOLD | PKT_ATTR_UNDERLINE). Pass PKT_ATTR_NONE for nomal text.
+ * @param  c A character to put on subwindow.
+ *
+ * @return 0 on success -1 when invalid x, y, or color code passed. 
+ */
+int pkt_win_putc_color(const struct pkt_window *win, int x, int y, 
+		enum pkt_color fcolor, enum pkt_color bcolor, unsigned int attr, char c);
+
+/**
+ * @brief  Put a string or multi-byte character(utf-8) on a subwindow at specified local x and y coodinates. 
+ *
+ * @param  win A subwindow structure.
+ * @param  x Local x position(columns).
+ * @param  y Local y position(rows).
+ * @param  str A string to put on subwindow.
+ *
+ * @return 0 on success, -1 when invalid x or y passed.
+
+ */
+int pkt_win_puts(const struct pkt_window *win, int x, int y, const char *str);
+
+/**
+ * @brief  Put a string or multi-byte character(UTF-8) on subwindow 
+ * 	   at specified x and y coordinates with color and attributes.
+ *
+ * @param  win A subwindow structure.
+ * @param  x Local x position(colmuns).
+ * @param  y Local y position(rows).
+ * @param  fcolor Font color (e.g., PKT_COLOR_RED). You also can pass ANSI 256 color code here.
+ * @param  bcolor Background color.
+ * @param  attr Bitmask of character attributes. Can be a bitwise OR of "enum pkt_attr"
+ *              values (e.g., PKT_ATTR_BOLD | PKT_ATTR_UNDERLINE). Pass PKT_ATTR_NONE for nomal text.
+ * @param  str A string to put on subwindow.
+ *
+ * @return 0 on success, -1 when invalid parameters passed.
+ */
+int pkt_win_puts_color(const struct pkt_window *win, int x, int y,
+		enum pkt_color fcolor, enum pkt_color bcolor, unsigned int attr, const char *str);
+
+/**
+ * @brief  Print a formatted string on subwindow at local x and y coordinates.
+ *
+ * @param  win A subwindow structure.
+ * @param  x Local x position(columns).
+ * @param  y Local y position(rows).
+ * @param  fmt A formatted string to print.
+ *
+ * @return 0 on success, -1 when invalid x or y passed.
+ */
+int pkt_win_printf(const struct pkt_window *win, int x, int y, const char *fmt, ...);
+
+/**
+ * @brief  Print a formatted string on subwindow at x and y coordinates with color and attributes.
+ *
+ * @param  win A subwindow structure.
+ * @param  x Local x position(columns).
+ * @param  y Local y position(rows).
+ * @param  fcolor Font color (e.g., PKT_COLOR_RED). You also can pass ANSI 256 color code here.
+ * @param  bcolor Background color.
+ * @param  attr Bitmask of character attributes. Can be a bitwise OR of "enum pkt_attr"
+ *              values (e.g., PKT_ATTR_BOLD | PKT_ATTR_UNDERLINE). Pass PKT_ATTR_NONE for nomal text.
+ * @param  fmt A formatted string to print.
+ *
+ * @return 0 on success, -1 when invalid parameters passed.
+ */
+int pkt_win_printf_color(const struct pkt_window *win, int x, int y, 
+		enum pkt_color fcolor, enum pkt_color bcolor, unsigned int attr, const char *fmt, ...);
+
+/**
+ * @brief  Draw a border arround subwindow.
+ *
+ * @note   Be aware that a border consumes first and last column and row. 
+ *	   So you need to adjust position or length to put characters.
+ *
+ * @param  win A subwindow structure.
+ *
+ * @return 0 on success, -1 if submodule is not big enough to draw border.
+ */
+int pkt_win_box(struct pkt_window *win);
+
+/**
+ * @brief  Draw a border arround subwindow with color and attributes.
+ *
+ * @note   Be aware that a border consumes first and last column and row. 
+ *	   So you need to adjust position or length to put characters.
+ *	   
+ * @param  fcolor Font color (e.g., PKT_COLOR_RED). You also can pass ANSI 256 color code here.
+ * @param  bcolor Background color.
+ * @param  attr Bitmask of character attributes. Can be a bitwise OR of "enum pkt_attr"
+ *              values (e.g., PKT_ATTR_BOLD | PKT_ATTR_UNDERLINE). Pass PKT_ATTR_NONE for nomal text.
+ *
+ * @return 
+ */
+int pkt_win_box_color(struct pkt_window *win, enum pkt_color fcolor, enum pkt_color bcolor, unsigned int attr);
+
+#endif
+
+```
+
+### 5.2 エンジンのディレクトリ構成
+
+pocket/
+├─ Makefile
+├─ bin/
+│   └─ island
+├─ include/
+│   ├─ pocket.h              (★公開用APIヘッダー: プレフィックス pkt_ に統一)
+│   └─ ext/                  (☆拡張モジュール用ヘッダー群)
+│       ├─ pkt_vec.h    (ベクトル・行列等)
+│       ├─ pkt_cam.h     (カメラ・描画ユーティリティ等)
+│       └─ pkt_col.h    (当たり判定・物理演算等)
+└─ src/
+├─ game/
+│   └─ main.c            (ユーザーが記述するゲームのロジック)
+├─ engine/
+│   ├─ pocket.c            (エンジンの心臓部・全ラッパー関数の集積地)
+│   ├─ pkt_scene.c         (汎用シーンレジストリシステム)
+│   ├─ pkt_scene_internal.h
+│   ├─ pkt_terminal.c      (ターミナル制御・ダブルバッファモジュール)
+│   ├─ pkt_terminal_internal.h
+│   ├─ pkt_memory.c        (メモリアリーナモジュール)
+│   ├─ pkt_memory_internal.h
+│   ├─ pkt_event.c         (イベントバスモジュール)
+│   └─ pkt_event_internal.h
+└─ ext/                  (☆拡張モジュール実装群)
+
+### 5.2 エンジンの機能拡張について
+今後、ゲームの開発を通じて必要に応じて機能の追加を検討する場合、「すべてのアプリケーションで必要になり得る機能か」という判断基準に照らし合わせ、それがイエスならコアAPIに、そうでなければ拡張APIとして実装する。
