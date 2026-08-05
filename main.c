@@ -221,18 +221,18 @@ int main(int argc, char *argv[])
 
 void game_init(void *user_data) 
 {
-	struct game_state *state = (struct game_state *)user_data;
+	struct game_state *s = (struct game_state *)user_data;
 
-	state->win_log = pkt_win_create(0, 0, 80, 1);
-	state->win_map = pkt_win_create(4, 2, VIEWPORT_COL, VIEWPORT_ROW);
-	state->win_status = pkt_win_create(0, 39, 80, 1);
-	state->win_command = pkt_win_create(80, 0, 40, 40);
+	s->win_log = pkt_win_create(0, 0, 80, 1);
+	s->win_map = pkt_win_create(4, 2, VIEWPORT_COL, VIEWPORT_ROW);
+	s->win_status = pkt_win_create(0, 39, 80, 1);
+	s->win_command = pkt_win_create(80, 0, 40, 40);
 
-	generate_map(state);	
+	generate_map(s);	
 
-	state->entity_count = 2;
+	s->entity_count = 2;
 
-	state->entities[0] = (struct entity){
+	s->entities[0] = (struct entity){
 		.type = ENT_COLONIST,
 		.x = 40,
 		.y = 12,
@@ -244,7 +244,7 @@ void game_init(void *user_data)
 		.bitflags = FLAG_FRIENDLY,
 	};
 
-	state->entities[1] = (struct entity){
+	s->entities[1] = (struct entity){
 		.type = ENT_DOG,
 		.x = 41,
 		.y = 12,
@@ -256,13 +256,13 @@ void game_init(void *user_data)
 		.bitflags = FLAG_FRIENDLY,
 	};
 
-	state->cursor_x = 43;
-	state->cursor_y = 12;
+	s->cursor_x = 43;
+	s->cursor_y = 12;
 }
 
 void game_update(void *user_data, float dt)
 {
-	struct game_state *state = (struct game_state *)user_data;
+	struct game_state *s = (struct game_state *)user_data;
 	(void)dt;
 	struct pkt_event e;
 
@@ -272,67 +272,68 @@ void game_update(void *user_data, float dt)
 				pkt_quit();
 
 			if (e.data.key.key_code == 'k')
-				state->cursor_y -= 1;
+				s->cursor_y -= 1;
 			if (e.data.key.key_code == 'j')
-				state->cursor_y += 1;
+				s->cursor_y += 1;
 			if (e.data.key.key_code == 'h')
-				state->cursor_x -= 1;
+				s->cursor_x -= 1;
 			if (e.data.key.key_code == 'l')
-				state->cursor_x += 1;
+				s->cursor_x += 1;
 
 			if (e.data.key.key_code == PKT_KEY_SPACE) {
-				if (state->map[state->cursor_y][state->cursor_x].object == OBJ_TREE) {
-					state->task_queue[state->task_count].type = TASK_HARVEST;
-					state->task_queue[state->task_count].target_x = state->cursor_x;
-					state->task_queue[state->task_count].target_y = state->cursor_y;
-					state->task_queue[state->task_count].assignee_id = -1;
-					state->task_count += 1;
+				if (s->map[s->cursor_y][s->cursor_x].object == OBJ_TREE) {
+					struct task *ts = &s->task_queue[s->task_count];
+					ts->type = TASK_HARVEST;
+					ts->target_x = s->cursor_x;
+					ts->target_y = s->cursor_y;
+					ts->assignee_id = -1;
+					s->task_count += 1;
 				}
 			}
 		}
 	}
 
-	if (state->cursor_x < 0)
-		state->cursor_x = 0;
-	if (state->cursor_x >= MAP_COL)
-		state->cursor_x = MAP_COL - 1;
-	if (state->cursor_y < 0)
-		state->cursor_y = 0;
-	if (state->cursor_y >= MAP_ROW)
-		state->cursor_y = MAP_ROW - 1;
+	if (s->cursor_x < 0)
+		s->cursor_x = 0;
+	if (s->cursor_x >= MAP_COL)
+		s->cursor_x = MAP_COL - 1;
+	if (s->cursor_y < 0)
+		s->cursor_y = 0;
+	if (s->cursor_y >= MAP_ROW)
+		s->cursor_y = MAP_ROW - 1;
 
-	state->cam_x = (state->cursor_x / VIEWPORT_COL) * VIEWPORT_COL;	
-	state->cam_y = (state->cursor_y / VIEWPORT_ROW) * VIEWPORT_ROW;	
+	s->cam_x = (s->cursor_x / VIEWPORT_COL) * VIEWPORT_COL;	
+	s->cam_y = (s->cursor_y / VIEWPORT_ROW) * VIEWPORT_ROW;	
 
-	if (state->cam_x < 0)
-		state->cam_x = 0;
-	if (state->cam_y < 0)
-		state->cam_y = 0;
-	if (state->cam_x > MAP_COL - VIEWPORT_COL)
-		state->cam_x = MAP_COL - VIEWPORT_COL;
-	if (state->cam_y > MAP_ROW - VIEWPORT_ROW)
-		state->cam_y = MAP_ROW - VIEWPORT_ROW;
+	if (s->cam_x < 0)
+		s->cam_x = 0;
+	if (s->cam_y < 0)
+		s->cam_y = 0;
+	if (s->cam_x > MAP_COL - VIEWPORT_COL)
+		s->cam_x = MAP_COL - VIEWPORT_COL;
+	if (s->cam_y > MAP_ROW - VIEWPORT_ROW)
+		s->cam_y = MAP_ROW - VIEWPORT_ROW;
 
-	entity_do_action(state);	
+	entity_do_action(s);	
 }
 
 void game_draw(void *user_data)
 {
-	struct game_state *state = (struct game_state *)user_data;
-	pkt_win_box(&state->win_command);
+	struct game_state *s = (struct game_state *)user_data;
+	pkt_win_box(&s->win_command);
 
-	pkt_win_puts(&state->win_command, 2, 0, " COMMANDS ");
+	pkt_win_puts(&s->win_command, 2, 0, " COMMANDS ");
 
 	for (int y = 0; y < VIEWPORT_ROW; y++) {
 		for (int x = 0; x < VIEWPORT_COL; x++) {
-			draw_terrains(state, x, y);
-			draw_objects(state, x, y);
+			draw_terrains(s, x, y);
+			draw_objects(s, x, y);
 		}
 	}
 	
-	draw_entities(state);
+	draw_entities(s);
 	
-	pkt_win_putc_color(&state->win_map, state->cursor_x - state->cam_x, state->cursor_y - state->cam_y, 
+	pkt_win_putc_color(&s->win_map, s->cursor_x - s->cam_x, s->cursor_y - s->cam_y, 
 			11, PKT_COLOR_BLACK, PKT_ATTR_BLINK, 'X');
 }
 
@@ -497,122 +498,119 @@ static void draw_objects(struct game_state *s, int x, int y)
 	int wx = s->cam_x + x;
 	int wy = s->cam_y + y;
 	unsigned int o = s->map[wy][wx].object;
+	const struct object_def *od = &object_defs[o];
 
 	if (o != OBJ_NONE) {
-		if (object_defs[o].sym_str != NULL)  
+		if (od->sym_str != NULL)  
 			pkt_win_puts_color(&s->win_map, x, y, 
-					object_defs[o].fc, object_defs[o].bc, object_defs[o].attr, 
-					object_defs[o].sym_str); 
+					od->fc, od->bc, od->attr, od->sym_str); 
 		else
 			pkt_win_putc_color(&s->win_map, x, y, 
-					object_defs[o].fc, object_defs[o].bc, object_defs[o].attr, 
-					object_defs[o].sym_char); 
+					od->fc, od->bc, od->attr, od->sym_char); 
 	}
-
 }
 
 static void draw_entities(struct game_state *s)
 {
 	for (int i = 0; i < s->entity_count; i++) {
-		struct entity e = s->entities[i];
-		int lx = e.x - s->cam_x;
-		int ly = e.y - s->cam_y;
+		struct entity *e = &s->entities[i];
+		int lx = e->x - s->cam_x;
+		int ly = e->y - s->cam_y;
 
-		if (lx >= 0 && lx < VIEWPORT_COL && ly >= 0 && ly < VIEWPORT_ROW)
-			pkt_win_putc_color(&s->win_map, lx, ly, 
-					entity_defs[e.type].fc, entity_defs[e.type].bc, 
-					PKT_ATTR_NONE, entity_defs[e.type].sym);
+		if (lx >= 0 && lx < VIEWPORT_COL && ly >= 0 && ly < VIEWPORT_ROW) {
+			struct entity_def d = entity_defs[e->type];
+			pkt_win_putc_color(&s->win_map, lx, ly,	d.fc, d.bc, PKT_ATTR_NONE, d.sym);
+		}
 	}
 }
 
 static void entity_do_action(struct game_state *s) 
 {
 	for (int i = 0; i < s->entity_count; i++) {
-		struct entity e = s->entities[i];
-		int timer = e.wait_timer;
+		struct entity *e = &s->entities[i];
+		int timer = e->wait_timer;
 		timer -= 1;
 
 		if (timer <= 0) {
-			switch (e.state) {
-
-				case ENT_STATE_IDLE:
-
-					if (e.type == ENT_COLONIST) {
-						int task_found = 0;
-
-						for (int j = 0; j < s->task_count; j++) {
-							if (s->task_queue[j].assignee_id == -1) {
-								s->entities[i].current_task_id = j;
-								s->entities[i].state = ENT_STATE_MOVE;
-								s->task_queue[j].assignee_id = i;
-								task_found = 1;
-								break;
-							}
-						}
-
-						if(!task_found)
-							entity_random_walk(s, i);
-
-					}else {
+			switch (e->state) {
+				case ENT_STATE_IDLE: {
+					if (e->type != ENT_COLONIST) {
 						entity_random_walk(s, i);
+						break;
+					}
+					int task_found = 0;
+
+					for (int j = 0; j < s->task_count; j++) {
+						struct task *ts = &s->task_queue[j];
+						if (ts->assignee_id == -1) {
+							e->current_task_id = j;
+							e->state = ENT_STATE_MOVE;
+							ts->assignee_id = i;
+							task_found = 1;
+							break;
+						}
 					}
 
+					if(!task_found)
+						entity_random_walk(s, i);
+
 					break;
-
-				case ENT_STATE_MOVE:
-
-					if (e.x == s->task_queue[e.current_task_id].target_x
-							&& e.y == s->task_queue[e.current_task_id].target_y) {
-						s->entities[i].state = ENT_STATE_WORK;
+			 	} 
+						     
+				case ENT_STATE_MOVE: {
+					struct task *ts = &s->task_queue[e->current_task_id];
+					if (e->x == ts->target_x && e->y == ts->target_y) {
+						e->state = ENT_STATE_WORK;
 					} else {
-						int nx = e.x;
-						int ny = e.y;
+						int nx = e->x;
+						int ny = e->y;
 
-						if (e.x < s->task_queue[e.current_task_id].target_x)
-							nx = e.x + 1;
-						else if (e.x > s->task_queue[e.current_task_id].target_x)
-							nx = e.x - 1;
+						if (e->x < ts->target_x)
+							nx = e->x + 1;
+						else if (e->x > ts->target_x)
+							nx = e->x - 1;
 
-						if (e.y < s->task_queue[e.current_task_id].target_y)
-							ny = e.y + 1;
-						else if (e.y > s->task_queue[e.current_task_id].target_y)
-							ny = e.y - 1;
+						if (e->y < ts->target_y)
+							ny = e->y + 1;
+						else if (e->y > ts->target_y)
+							ny = e->y - 1;
 
 						if (s->map[ny][nx].bitflags & FLAG_WALKABLE) {
-							s->entities[i].x = nx;
-							s->entities[i].y = ny;
+							e->x = nx;
+							e->y = ny;
 						}
 					}
 					break;
+				}
 
-				case ENT_STATE_WORK:
-					int x = s->task_queue[e.current_task_id].target_x;
-					int y = s->task_queue[e.current_task_id].target_y;
-					s->map[y][x].object = OBJ_NONE;
-					s->entities[i].current_task_id = -1;
-					s->entities[i].state = ENT_STATE_IDLE;
+				case ENT_STATE_WORK: {
+					struct task *ts = &s->task_queue[e->current_task_id];
+					s->map[ts->target_y][ts->target_x].object = OBJ_NONE;
+					e->current_task_id = -1;
+					e->state = ENT_STATE_IDLE;
 					break;
+				}
 			}
 			timer = FPS;	
 		}
 
-		s->entities[i].wait_timer = timer;
+		e->wait_timer = timer;
 	}
 }
 
 static void entity_random_walk(struct game_state *s, int idx)
 {
-	struct entity e = s->entities[idx];
+	struct entity *e = &s->entities[idx];
 
 	int dx = rand() % 3 - 1; // -1 ~ 1
 	int dy = rand() % 3 - 1;
-	int nx = e.x + dx;
-	int ny = e.y + dy;
+	int nx = e->x + dx;
+	int ny = e->y + dy;
 
 	if (s->map[ny][nx].bitflags & FLAG_WALKABLE) {
 		if (nx >= 0 && nx < MAP_COL)
-			s->entities[idx].x = nx; 
+			e->x = nx; 
 		if (ny >= 0 && ny < MAP_ROW)
-			s->entities[idx].y = ny;
+			e->y = ny;
 	}
 }
