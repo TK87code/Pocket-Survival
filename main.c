@@ -33,6 +33,8 @@ enum object_type {
 	OBJ_GRASS,
 };
 
+#define MAX_DROPPED_ITEM 1024
+
 enum item_type {
 	ITEM_NONE = 0,
 	ITEM_WOOD,
@@ -49,6 +51,8 @@ enum entity_state {
 	ENT_STATE_MOVE,
 	ENT_STATE_WORK,
 };
+
+#define MAX_TASK 256
 
 enum task_type {
 	TASK_NONE = 0,
@@ -85,7 +89,7 @@ struct item { // 8 bytes
 	int16_t x;
 	int16_t y;
 	uint16_t amount;
-	uint8_t item_type;
+	uint8_t type;
 	int8_t reserved;
 };
 
@@ -125,16 +129,24 @@ struct object_def { // 14 + 2 bytes
 	uint8_t clear_bitflags;
 };
 
+struct item_def { // 12 bytes
+	const char *sym_str;
+	char sym_char;
+	uint8_t fc;
+	uint8_t bc;
+	uint8_t attr;
+};
+
 struct game_state {
 	struct map_cell map[MAP_ROW][MAP_COL];
-	struct item items[1024];
-	struct task task_queue[256];
+	struct item items[MAX_DROPPED_ITEM];
+	struct task task_queue[MAX_TASK];
 	struct entity entities[16];
 	struct pkt_window win_map;
 	struct pkt_window win_status;
 	struct pkt_window win_command;
 	struct pkt_window win_log;
-	
+
 	int entity_count;
 	int task_count;
 	int dropped_item_count;
@@ -170,6 +182,12 @@ struct object_def object_defs[] = {
 	[OBJ_GRASS] =	{NULL, '"', 76, 16, PKT_ATTR_NONE, 0x00, 0x00}, 
 };
 
+struct item_def item_defs[] = {
+	[ITEM_NONE] = 	{0},
+	[ITEM_WOOD] = 	{"≡", 0, 172, 16, PKT_ATTR_BOLD},
+	[ITEM_STONE] =	{NULL, '*', 245, 16, PKT_ATTR_BOLD},
+};
+
 int test_seed = 311;
 
 // === Proto Types ===
@@ -186,6 +204,7 @@ static void draw_terrains(struct game_state *s, int x, int y);
 static void draw_objects(struct game_state *s, int x, int y);
 static void diversify_terrains(int wx, int wy, char *sym, enum pkt_color *fc, unsigned int t);
 static void draw_entities(struct game_state *s);
+static void draw_items(struct game_state *s);
 static void entity_do_action(struct game_state *s);
 static void entity_random_walk(struct game_state *s, int idx);
 
@@ -204,7 +223,7 @@ int main(int argc, char *argv[])
 	if (pkt_init(&config) < 0) {
 		return -1;
 	}
-	
+
 	struct pkt_scene scene = {0};
 	scene.on_update = game_update;
 	scene.on_draw = game_draw;
@@ -287,7 +306,8 @@ void game_update(void *user_data, float dt)
 					ts->target_x = s->cursor_x;
 					ts->target_y = s->cursor_y;
 					ts->assignee_id = -1;
-					s->task_count += 1;
+					if (s->task_count < MAX_TASK)
+						s->task_count += 1;
 				}
 			}
 		}
@@ -330,9 +350,10 @@ void game_draw(void *user_data)
 			draw_objects(s, x, y);
 		}
 	}
-	
+
+	draw_items(s);
 	draw_entities(s);
-	
+
 	pkt_win_putc_color(&s->win_map, s->cursor_x - s->cam_x, s->cursor_y - s->cam_y, 
 			11, PKT_COLOR_BLACK, PKT_ATTR_BLINK, 'X');
 }
@@ -524,6 +545,23 @@ static void draw_entities(struct game_state *s)
 	}
 }
 
+static void draw_items(struct game_state *s)
+{
+	for (int i = 0; i < s->dropped_item_count; i++) {
+		struct item *itm = &s->items[i];
+		int lx = itm->x - s->cam_x;
+		int ly = itm->y - s->cam_y;
+
+		if (lx >= 0 && lx < VIEWPORT_COL && ly >= 0 && ly < VIEWPORT_ROW) {
+			const struct item_def *d = &item_defs[itm->type]; 
+			if (d->sym_str != NULL)
+				pkt_win_puts_color(&s->win_map, lx, ly, d->fc, d->bc, d->attr, d->sym_str);
+			else
+				pkt_win_putc_color(&s->win_map, lx, ly, d->fc, d->bc, d->attr, d->sym_char);
+		}
+	}
+}
+
 static void entity_do_action(struct game_state *s) 
 {
 	for (int i = 0; i < s->entity_count; i++) {
@@ -584,8 +622,27 @@ static void entity_do_action(struct game_state *s)
 				}
 
 				case ENT_STATE_WORK: {
-					struct task *ts = &s->task_queue[e->current_task_id];
-					s->map[ts->target_y][ts->target_x].object = OBJ_NONE;
+					const struct task *ts = &s->task_queue[e->current_task_id];
+					struct map_cell *c = &s->map[ts->target_y][ts->target_x]; 
+					unsigned int o = c->object;
+
+					c->object = OBJ_NONE;
+
+					if (s->dropped_item_count < MAX_DROPPED_ITEM) {
+						struct item *itm = &s->items[s->dropped_item_count];
+						itm->x = ts->target_x;
+						itm->y = ts->target_y;
+						if (o == OBJ_TREE) {
+							itm->type = ITEM_WOOD;
+							itm->amount = 10;
+						} else if (o == OBJ_ROCK) {
+							itm->type = ITEM_STONE;
+							itm->amount = 5;
+						}
+
+						s->dropped_item_count += 1;
+					}
+
 					e->current_task_id = -1;
 					e->state = ENT_STATE_IDLE;
 					break;
