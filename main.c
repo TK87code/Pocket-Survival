@@ -8,8 +8,10 @@
 
 #define MAP_COL 250 
 #define MAP_ROW 250 
-#define VIEWPORT_COL 72
-#define VIEWPORT_ROW 36
+#define PANEL_COL 120
+#define PANEL_ROW 40
+#define VIEWPORT_COL 76
+#define VIEWPORT_ROW 38
 
 // Entity state flags
 #define FLAG_FRIENDLY (1 << 0)
@@ -146,6 +148,9 @@ struct game_state {
 	struct pkt_window win_status;
 	struct pkt_window win_command;
 	struct pkt_window win_log;
+	
+	uint64_t global_ticks;
+	float game_minutes_per_real_second;
 
 	int entity_count;
 	int task_count;
@@ -200,6 +205,7 @@ static float hash2d(int x, int y, int seed);
 static float smooth_interp(float a, float b, float t);
 static float value_noise_2d(float x, float y, int seed, float scale);
 static void generate_map(struct game_state *s);
+static void draw_ingame_clock(struct game_state *s);
 static void draw_terrains(struct game_state *s, int x, int y);
 static void draw_objects(struct game_state *s, int x, int y);
 static void diversify_terrains(int wx, int wy, char *sym, enum pkt_color *fc, unsigned int t);
@@ -219,6 +225,8 @@ int main(int argc, char *argv[])
 	config.on_init = game_init;
 	config.user_data = &state;
 	config.target_fps = FPS;
+	config.default_fcolor = 16;
+	config.default_bcolor = 237;
 
 	if (pkt_init(&config) < 0) {
 		return -1;
@@ -242,8 +250,10 @@ void game_init(void *user_data)
 {
 	struct game_state *s = (struct game_state *)user_data;
 
+	s->game_minutes_per_real_second = 1.0f; // TODO change ingame time speed
+
 	s->win_log = pkt_win_create(0, 0, 80, 1);
-	s->win_map = pkt_win_create(4, 2, VIEWPORT_COL, VIEWPORT_ROW);
+	s->win_map = pkt_win_create(2, 1, VIEWPORT_COL, VIEWPORT_ROW);
 	s->win_status = pkt_win_create(0, 39, 80, 1);
 	s->win_command = pkt_win_create(80, 0, 40, 40);
 
@@ -335,14 +345,23 @@ void game_update(void *user_data, float dt)
 		s->cam_y = MAP_ROW - VIEWPORT_ROW;
 
 	entity_do_action(s);	
+
+	s->global_ticks += 1;
 }
 
 void game_draw(void *user_data)
 {
 	struct game_state *s = (struct game_state *)user_data;
-	pkt_win_box(&s->win_command);
+	for (int y = 0; y < PANEL_ROW; y++) {
+		for (int x = 0; x < PANEL_COL; x++) {
+			pkt_putc_color(x, y, 16, 237, PKT_ATTR_NONE, ' ');
+		}
+	}
+	pkt_win_box_color(&s->win_command, 16, 237, PKT_ATTR_NONE);
 
 	pkt_win_puts(&s->win_command, 2, 0, " COMMANDS ");
+	pkt_win_puts(&s->win_log, 0, 0, " log ");
+	draw_ingame_clock(s);
 
 	for (int y = 0; y < VIEWPORT_ROW; y++) {
 		for (int x = 0; x < VIEWPORT_COL; x++) {
@@ -462,6 +481,42 @@ static void generate_map(struct game_state *s)
 	}
 }
 
+static void draw_ingame_clock(struct game_state *s)
+{
+	int total_mins = s->global_ticks / (FPS * s->game_minutes_per_real_second);
+	int minutes = total_mins % 60;
+	int hours = ((total_mins / 60) % 24) + 9; // New game starts from Day 1 9am;
+	int days = (total_mins / (60 * 24)) + 1;
+	
+	const char* ampm = NULL;
+	int is_am = 0;
+	if (hours >= 12) {
+		ampm = "PM";
+	} else {
+		ampm = "AM";
+		is_am = 1;
+	}
+	
+	// Change backgroud color according to hours to represent daylight.
+	unsigned int fc = 0;
+	unsigned int bc = 0;
+	if (hours <= 4) {
+		fc = 15;
+		bc = 235;
+	} else if (hours <= 8) {
+		fc = 16;
+		bc = 215;
+	} else if (hours <= 17) {
+		fc = 16;
+		bc = 227;
+	} else if (hours <= 24) { 
+		fc = 15;
+		bc = 235;
+	}
+
+	pkt_win_printf_color(&s->win_status, 2, 0, (enum pkt_color)fc, (enum pkt_color)bc, PKT_ATTR_NONE, 
+			"Day %d - %s %02d:%02d", days, ampm, (is_am) ? hours:hours - 12, minutes);
+}
 
 static void draw_terrains(struct game_state *s, int x, int y)
 {
