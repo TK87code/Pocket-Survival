@@ -6,6 +6,22 @@
 // === Definitions ===
 #define FPS 60
 
+// Time and Time scales
+#define REAL_SECONDS_PER_GAME_MINUTE 6
+#define TICKS_PER_GAME_MINUTE (FPS * REAL_SECONDS_PER_GAME_MINUTE)
+
+// Game world laws of physics
+#define METERS_PER_CELL 2
+#define HUMAN_SPEED_M_PER_MIN 60
+#define CELLS_PER_MIN (HUMAN_SPEED_M_PER_MIN / METERS_PER_CELL)
+
+#define HUMAN_BASE_TICKS (TICKS_PER_GAME_MINUTE / CELLS_PER_MIN)
+
+#define TARGET_TICK_PER_SEC 60.0f
+#define TICK_INTERVAL (1.0f / TARGET_TICK_PER_SEC)
+
+#define SEC2TICK(seconds) ((uint16_t)((seconds) * TARGET_TICK_PER_SEC))
+
 #define MAP_COL 250 
 #define MAP_ROW 250 
 #define PANEL_COL 120
@@ -56,30 +72,34 @@ enum entity_state {
 
 #define MAX_TASK 256
 
+enum work_type {
+	WORK_NONE = 0,
+	WORK_FORESTRY,
+	WORK_MINING,
+	WORK_CONSTRUCTION,
+};
+
 enum task_type {
 	TASK_NONE = 0,
-	TASK_HARVEST,
-	TASK_CONSTRUCT,
-	TASK_HAUL,
+	TASK_CHOP_TREE,
+	TASK_MINE_ROCK,
 };
 
 #define FLAG_WALKABLE (1 << 0)
 #define FLAG_HAS_ITEM (1 << 1)
 #define FLAG_BLUE_PRINT (1 << 2)
 
-struct map_cell { // 4 bytes
-	uint8_t reserved;	
+struct map_cell { // 3 + 1 bytes
 	uint8_t object;		// Store enum object_type
 	uint8_t terrain;	// store enum terrain_type
 	uint8_t bitflags;	// Bitflags to store terrain state (e.g., roofed or burning)
 };
 
-struct entity { // 16 bytes 
+struct entity { // 14 + 2 bytes 
 	int16_t x;
 	int16_t y;
 	int16_t wait_timer;
 	uint16_t carrying_item_amount;
-	int16_t reserved;
 	int16_t current_task_id;	// current task id
 	uint8_t type;			// store enum entity_type
 	uint8_t bitflags;		// Bitflags to store entity state.
@@ -87,34 +107,32 @@ struct entity { // 16 bytes
 	uint8_t carrying_item;		// enum item_type
 };
 
-struct item { // 8 bytes
+struct item { // 7 + 1 bytes
 	int16_t x;
 	int16_t y;
 	uint16_t amount;
 	uint8_t type;
-	int8_t reserved;
 };
 
-struct task { // 16 bytes
-	int32_t reserved;
-	int16_t reserved2;
+struct task { // 9 + 6 = 16 bytes
 	int16_t target_x;
 	int16_t target_y;
 	uint16_t req_amount;
 	uint8_t req_item;
 	uint8_t type;		 //enum task_type
 	int8_t assignee_id;
-	int8_t reserved3;
 };
 
-struct terrain_def { // 4 bytes
+struct terrain_def { // 6 + 2 bytes
+	uint16_t move_cost_percent;
 	char sym;
 	uint8_t fc;
 	uint8_t bc;
 	uint8_t bitflags;
 };
 
-struct entity_def { // 4 bytes
+struct entity_def { // 6 + 2 bytes
+	uint16_t base_move_ticks; // how many ticks to rest till next move
 	char sym;		
 	uint8_t fc;
 	uint8_t bc;
@@ -139,6 +157,11 @@ struct item_def { // 12 bytes
 	uint8_t attr;
 };
 
+struct task_def { // 3 + 1 bytes
+	uint8_t work_type;
+	uint16_t required_ticks;
+};
+
 struct game_state {
 	struct map_cell map[MAP_ROW][MAP_COL];
 	struct item items[MAX_DROPPED_ITEM];
@@ -151,6 +174,9 @@ struct game_state {
 	
 	uint64_t global_ticks;
 	float game_minutes_per_real_second;
+
+	float tick_accumulator;
+	float time_scale;
 
 	int entity_count;
 	int task_count;
@@ -166,18 +192,18 @@ struct game_state {
 // === Globals ===
 
 struct terrain_def terrain_defs[] = {
-	[TERRAIN_DEEP_WATER] = 	{'~', 18, 16, 0x00},
-	[TERRAIN_GRAVEL] = 	{':', 244, 16, FLAG_WALKABLE},
-	[TERRAIN_SOIL] = 	{'.', 137, 16, FLAG_WALKABLE},
-	[TERRAIN_MUD] = 	{'=', 94, 16, FLAG_WALKABLE},
-	[TERRAIN_WATER] = 	{'~', 33, 16, 0x00},
-	[TERRAIN_SHALLOWS] = 	{'-', 45, 16, FLAG_WALKABLE},
-	[TERRAIN_MOUNTAIN] = 	{'^', 250, 16, 0x00},
+	[TERRAIN_DEEP_WATER] = 	{0,   '~', 18, 16, 0x00},
+	[TERRAIN_GRAVEL] = 	{100, ':', 244, 16, FLAG_WALKABLE},
+	[TERRAIN_SOIL] = 	{100, '.', 137, 16, FLAG_WALKABLE},
+	[TERRAIN_MUD] = 	{150, '=', 94, 16, FLAG_WALKABLE},
+	[TERRAIN_WATER] = 	{0,   '~', 33, 16, 0x00},
+	[TERRAIN_SHALLOWS] = 	{200, '-', 45, 16, FLAG_WALKABLE},
+	[TERRAIN_MOUNTAIN] = 	{0,   '^', 250, 16, 0x00},
 };
 
 struct entity_def entity_defs[] = {
-	[ENT_COLONIST] = 	{'@', 15, 16, PKT_ATTR_NONE},
-	[ENT_DOG] = 		{'d', 15, 16, PKT_ATTR_NONE},
+	[ENT_COLONIST] = 	{HUMAN_BASE_TICKS, '@', 15, 16, PKT_ATTR_NONE, },
+	[ENT_DOG] = 		{(HUMAN_BASE_TICKS / 2),'d', 15, 16, PKT_ATTR_NONE},
 };
 
 struct object_def object_defs[] = {
@@ -191,6 +217,12 @@ struct item_def item_defs[] = {
 	[ITEM_NONE] = 	{0},
 	[ITEM_WOOD] = 	{"≡", 0, 172, 16, PKT_ATTR_BOLD},
 	[ITEM_STONE] =	{NULL, '*', 245, 16, PKT_ATTR_BOLD},
+};
+
+struct task_def task_defs[] = {
+	[TASK_NONE] = 		{ WORK_NONE, 0},
+	[TASK_CHOP_TREE] = 	{ WORK_FORESTRY, SEC2TICK(5.0)},
+	[TASK_MINE_ROCK] = 	{ WORK_MINING, SEC2TICK(8.0)},
 };
 
 int test_seed = 311;
@@ -212,7 +244,7 @@ static void diversify_terrains(int wx, int wy, char *sym, enum pkt_color *fc, un
 static void draw_entities(struct game_state *s);
 static void draw_items(struct game_state *s);
 static void entity_do_action(struct game_state *s);
-static void entity_random_walk(struct game_state *s, int idx);
+static int entity_random_walk(struct game_state *s, int idx);
 
 int main(int argc, char *argv[]) 
 {
@@ -227,6 +259,8 @@ int main(int argc, char *argv[])
 	config.target_fps = FPS;
 	config.default_fcolor = 16;
 	config.default_bcolor = 237;
+	config.game_cols = PANEL_COL;
+	config.game_rows = PANEL_ROW;
 
 	if (pkt_init(&config) < 0) {
 		return -1;
@@ -251,6 +285,8 @@ void game_init(void *user_data)
 	struct game_state *s = (struct game_state *)user_data;
 
 	s->game_minutes_per_real_second = 1.0f; // TODO change ingame time speed
+	s->tick_accumulator = 0.0f;
+	s->time_scale = 1.0f;
 
 	s->win_log = pkt_win_create(0, 0, 80, 1);
 	s->win_map = pkt_win_create(2, 1, VIEWPORT_COL, VIEWPORT_ROW);
@@ -292,7 +328,6 @@ void game_init(void *user_data)
 void game_update(void *user_data, float dt)
 {
 	struct game_state *s = (struct game_state *)user_data;
-	(void)dt;
 	struct pkt_event e;
 
 	while (pkt_poll_event(&e) == 0) {
@@ -310,14 +345,25 @@ void game_update(void *user_data, float dt)
 				s->cursor_x += 1;
 
 			if (e.data.key.key_code == PKT_KEY_SPACE) {
-				if (s->map[s->cursor_y][s->cursor_x].object == OBJ_TREE) {
+				unsigned int o = s->map[s->cursor_y][s->cursor_x].object;
+				// TODO write better code. Maybe object should have associated task as data?	
+				if (o == OBJ_TREE) {
 					struct task *ts = &s->task_queue[s->task_count];
-					ts->type = TASK_HARVEST;
+					ts->type = TASK_CHOP_TREE;
 					ts->target_x = s->cursor_x;
 					ts->target_y = s->cursor_y;
 					ts->assignee_id = -1;
 					if (s->task_count < MAX_TASK)
 						s->task_count += 1;
+				} else if (o == OBJ_ROCK) {
+					struct task *ts = &s->task_queue[s->task_count];
+					ts->type = TASK_MINE_ROCK;
+					ts->target_x = s->cursor_x;
+					ts->target_y = s->cursor_y;
+					ts->assignee_id = -1;
+					if (s->task_count < MAX_TASK)
+						s->task_count += 1;
+
 				}
 			}
 		}
@@ -344,9 +390,14 @@ void game_update(void *user_data, float dt)
 	if (s->cam_y > MAP_ROW - VIEWPORT_ROW)
 		s->cam_y = MAP_ROW - VIEWPORT_ROW;
 
-	entity_do_action(s);	
+	s->tick_accumulator += dt * s->time_scale;
 
-	s->global_ticks += 1;
+	while (s->tick_accumulator >= TICK_INTERVAL) {
+		entity_do_action(s);
+		s->global_ticks += 1;
+
+		s->tick_accumulator -= TICK_INTERVAL;
+	}
 }
 
 void game_draw(void *user_data)
@@ -483,19 +534,18 @@ static void generate_map(struct game_state *s)
 
 static void draw_ingame_clock(struct game_state *s)
 {
-	int total_mins = s->global_ticks / (FPS * s->game_minutes_per_real_second);
-	int minutes = total_mins % 60;
-	int hours = ((total_mins / 60) % 24) + 9; // New game starts from Day 1 9am;
-	int days = (total_mins / (60 * 24)) + 1;
+	int elapsed_mins = s->global_ticks / TICKS_PER_GAME_MINUTE;
+	int abs_mins = elapsed_mins + (9 * 60); // New game starts from Day 1 9am;
 	
-	const char* ampm = NULL;
-	int is_am = 0;
-	if (hours >= 12) {
-		ampm = "PM";
-	} else {
-		ampm = "AM";
-		is_am = 1;
-	}
+	int mins = abs_mins % 60;
+	int hours = (abs_mins / 60) % 24; 
+	int days = (abs_mins / (60 * 24)) + 1;
+	
+	const char* ampm = (hours >= 12) ? "PM" : "AM";
+
+	int display_hour = hours % 12;
+	if (display_hour == 0)
+		display_hour = 12;
 	
 	// Change backgroud color according to hours to represent daylight.
 	unsigned int fc = 0;
@@ -515,7 +565,7 @@ static void draw_ingame_clock(struct game_state *s)
 	}
 
 	pkt_win_printf_color(&s->win_status, 2, 0, (enum pkt_color)fc, (enum pkt_color)bc, PKT_ATTR_NONE, 
-			"Day %d - %s %02d:%02d", days, ampm, (is_am) ? hours:hours - 12, minutes);
+			"Day %d - %s %02d:%02d", days, ampm, display_hour, mins);
 }
 
 static void draw_terrains(struct game_state *s, int x, int y)
@@ -590,12 +640,25 @@ static void draw_entities(struct game_state *s)
 {
 	for (int i = 0; i < s->entity_count; i++) {
 		struct entity *e = &s->entities[i];
-		int lx = e->x - s->cam_x;
-		int ly = e->y - s->cam_y;
+		struct entity_def d = entity_defs[e->type];
 
-		if (lx >= 0 && lx < VIEWPORT_COL && ly >= 0 && ly < VIEWPORT_ROW) {
-			struct entity_def d = entity_defs[e->type];
-			pkt_win_putc_color(&s->win_map, lx, ly,	d.fc, d.bc, PKT_ATTR_NONE, d.sym);
+		int ex = e->x - s->cam_x;
+		int ey = e->y - s->cam_y;
+		if (ex >= 0 && ex < VIEWPORT_COL && ey >= 0 && ey < VIEWPORT_ROW) 
+			pkt_win_putc_color(&s->win_map, ex, ey,	d.fc, d.bc, PKT_ATTR_NONE, d.sym);
+
+		// Slash animation
+		if (e->state == ENT_STATE_WORK) {
+			struct task *ts = &s->task_queue[e->current_task_id];	
+			int sx = ts->target_x - s->cam_x;
+			int sy = ts->target_y - s->cam_y;
+
+			if (sx >= 0 && sx < VIEWPORT_COL && sy >= 0 && sy < VIEWPORT_ROW) {
+				if ((s->global_ticks / 30) % 2 == 0) { 
+					pkt_win_putc_color(&s->win_map, sx, sy,	15, 
+							PKT_COLOR_BLACK, PKT_ATTR_NONE, '/');
+				}
+			}
 		}
 	}
 }
@@ -628,7 +691,7 @@ static void entity_do_action(struct game_state *s)
 			switch (e->state) {
 				case ENT_STATE_IDLE: {
 					if (e->type != ENT_COLONIST) {
-						entity_random_walk(s, i);
+						timer = entity_random_walk(s, i);
 						break;
 					}
 					int task_found = 0;
@@ -645,15 +708,20 @@ static void entity_do_action(struct game_state *s)
 					}
 
 					if(!task_found)
-						entity_random_walk(s, i);
+						timer = entity_random_walk(s, i);
 
 					break;
 			 	} 
 						     
 				case ENT_STATE_MOVE: {
 					struct task *ts = &s->task_queue[e->current_task_id];
-					if (e->x == ts->target_x && e->y == ts->target_y) {
+					//[REF] https://atmarkit.itmedia.co.jp/ait/articles/2405/16/news029.html
+					int dx = abs(e->x - ts->target_x);
+					int dy = abs(e->y - ts->target_y);
+
+					if (dx <= 1 && dy <= 1) {
 						e->state = ENT_STATE_WORK;
+						timer = task_defs[ts->type].required_ticks;
 					} else {
 						int nx = e->x;
 						int ny = e->y;
@@ -668,9 +736,13 @@ static void entity_do_action(struct game_state *s)
 						else if (e->y > ts->target_y)
 							ny = e->y - 1;
 
-						if (s->map[ny][nx].bitflags & FLAG_WALKABLE) {
+						struct map_cell nc = s->map[ny][nx];
+
+						if (nc.bitflags & FLAG_WALKABLE) {
 							e->x = nx;
 							e->y = ny;
+							timer = (entity_defs[e->type].base_move_ticks * 
+									terrain_defs[nc.terrain].move_cost_percent) / 100; 
 						}
 					}
 					break;
@@ -678,19 +750,18 @@ static void entity_do_action(struct game_state *s)
 
 				case ENT_STATE_WORK: {
 					const struct task *ts = &s->task_queue[e->current_task_id];
-					struct map_cell *c = &s->map[ts->target_y][ts->target_x]; 
-					unsigned int o = c->object;
 
-					c->object = OBJ_NONE;
+					s->map[ts->target_y][ts->target_x].object = OBJ_NONE;
 
 					if (s->dropped_item_count < MAX_DROPPED_ITEM) {
 						struct item *itm = &s->items[s->dropped_item_count];
 						itm->x = ts->target_x;
 						itm->y = ts->target_y;
-						if (o == OBJ_TREE) {
+
+						if (ts->type == TASK_CHOP_TREE) {
 							itm->type = ITEM_WOOD;
 							itm->amount = 10;
-						} else if (o == OBJ_ROCK) {
+						} else if (ts->type == TASK_MINE_ROCK) {
 							itm->type = ITEM_STONE;
 							itm->amount = 5;
 						}
@@ -699,18 +770,18 @@ static void entity_do_action(struct game_state *s)
 					}
 
 					e->current_task_id = -1;
+					timer = 10;
 					e->state = ENT_STATE_IDLE;
 					break;
 				}
 			}
-			timer = FPS;	
 		}
 
 		e->wait_timer = timer;
 	}
 }
 
-static void entity_random_walk(struct game_state *s, int idx)
+static int entity_random_walk(struct game_state *s, int idx)
 {
 	struct entity *e = &s->entities[idx];
 
@@ -719,10 +790,17 @@ static void entity_random_walk(struct game_state *s, int idx)
 	int nx = e->x + dx;
 	int ny = e->y + dy;
 
-	if (s->map[ny][nx].bitflags & FLAG_WALKABLE) {
+	struct map_cell nc = s->map[ny][nx];
+
+	if (nc.bitflags & FLAG_WALKABLE) {
 		if (nx >= 0 && nx < MAP_COL)
 			e->x = nx; 
 		if (ny >= 0 && ny < MAP_ROW)
 			e->y = ny;
+
+		return (entity_defs[e->type].base_move_ticks *
+				terrain_defs[nc.terrain].move_cost_percent) / 100;
+	} else {
+		return 10;
 	}
 }
