@@ -655,7 +655,7 @@ static void draw_entities(struct game_state *s)
 
 			if (sx >= 0 && sx < VIEWPORT_COL && sy >= 0 && sy < VIEWPORT_ROW) {
 				if ((s->global_ticks / 30) % 2 == 0) { 
-					pkt_win_putc_color(&s->win_map, sx, sy,	15, 
+					pkt_win_putc_color(&s->win_map, sx, sy, 220, 
 							PKT_COLOR_BLACK, PKT_ATTR_NONE, '/');
 				}
 			}
