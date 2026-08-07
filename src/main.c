@@ -52,7 +52,7 @@ void game_init(void *user_data)
 {
 	struct game_state *s = (struct game_state *)user_data;
 
-	s->game_minutes_per_real_second = 1.0f; // TODO change ingame time speed
+	s->game_minutes_per_real_second = 1.0f; 
 	s->tick_accumulator = 0.0f;
 	s->time_scale = 1.0f;
 
@@ -74,7 +74,7 @@ void game_init(void *user_data)
 		.wait_timer = FPS,
 		.carrying_item = ITEM_NONE,
 		.carrying_item_amount = 0,
-		.bitflags = FLAG_FRIENDLY,
+		.bitflags = FLAG_ENTITY_FRIENDLY,
 	};
 
 	s->entities[1] = (struct entity){
@@ -86,7 +86,7 @@ void game_init(void *user_data)
 		.wait_timer = FPS,
 		.carrying_item = ITEM_NONE,
 		.carrying_item_amount = 0,
-		.bitflags = FLAG_FRIENDLY,
+		.bitflags = FLAG_ENTITY_FRIENDLY,
 	};
 
 	s->cursor_x = 43;
@@ -114,25 +114,17 @@ void game_update(void *user_data, float dt)
 
 			if (e.data.key.key_code == PKT_KEY_SPACE) {
 				unsigned int o = s->map[s->cursor_y][s->cursor_x].object;
-				// TODO write better code. Maybe object should have associated task as data?	
-				if (o == OBJ_TREE) {
-					struct task *ts = &s->task_queue[s->task_count];
-					ts->type = TASK_CHOP_TREE;
-					ts->target_x = s->cursor_x;
-					ts->target_y = s->cursor_y;
-					ts->assignee_id = -1;
-					if (s->task_count < MAX_TASK)
-						s->task_count += 1;
-				} else if (o == OBJ_ROCK) {
-					struct task *ts = &s->task_queue[s->task_count];
-					ts->type = TASK_MINE_ROCK;
-					ts->target_x = s->cursor_x;
-					ts->target_y = s->cursor_y;
-					ts->assignee_id = -1;
-					if (s->task_count < MAX_TASK)
-						s->task_count += 1;
+				if (o == OBJ_NONE)
+					continue;
+				unsigned int t_type = object_defs[o].associated_task;
+				struct task *ts = &s->task_queue[s->task_count];
 
-				}
+				ts->type = t_type;
+				ts->target_x = s->cursor_x;
+				ts->target_y = s->cursor_y;
+				ts->assignee_id = -1;
+				if (s->task_count < MAX_TASK)
+					s->task_count += 1;
 			}
 		}
 	}
@@ -171,11 +163,6 @@ void game_update(void *user_data, float dt)
 void game_draw(void *user_data)
 {
 	struct game_state *s = (struct game_state *)user_data;
-	for (int y = 0; y < PANEL_ROW; y++) {
-		for (int x = 0; x < PANEL_COL; x++) {
-			pkt_putc_color(x, y, 16, 237, PKT_ATTR_NONE, ' ');
-		}
-	}
 	pkt_win_box_color(&s->win_command, 16, 237, PKT_ATTR_NONE);
 
 	pkt_win_puts(&s->win_command, 2, 0, " COMMANDS ");
@@ -193,7 +180,7 @@ void game_draw(void *user_data)
 	draw_entities(s);
 
 	pkt_win_putc_color(&s->win_map, s->cursor_x - s->cam_x, s->cursor_y - s->cam_y, 
-			11, PKT_COLOR_BLACK, PKT_ATTR_BLINK, 'X');
+			11, 16, PKT_ATTR_BLINK, 'X');
 }
 
 

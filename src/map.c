@@ -7,7 +7,7 @@ void generate_map(struct game_state *s)
 {
 	for (int y = 0; y < MAP_ROW; y++) {
 		for (int x = 0; x < MAP_COL; x++) {
-			unsigned int o = 0;
+			unsigned int o = OBJ_NONE;
 
 			float e_base = value_noise_2d(x, y, s->seed, 200.f) * 0.8f;
 			float e_detail = value_noise_2d(x, y, s->seed + 123, 15.0f) * 0.2f;
@@ -59,8 +59,8 @@ void generate_map(struct game_state *s)
 			s->map[y][x].terrain = (uint8_t)t;
 			s->map[y][x].object = (uint8_t)o;
 			s->map[y][x].bitflags = terrain_defs[t].bitflags;
-			s->map[y][x].bitflags |= object_defs[o].add_bitflags;
-			s->map[y][x].bitflags &= ~object_defs[o].clear_bitflags;
+			if (o != OBJ_NONE && (object_defs[o].bitflags & FLAG_OBJ_WALKABLE) == 0)
+				s->map[y][x].bitflags &= ~FLAG_CELL_WALKABLE;
 		}
 	}
 }

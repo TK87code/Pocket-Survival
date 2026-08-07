@@ -30,7 +30,6 @@
 #define VIEWPORT_ROW 38
 
 // Entity state flags
-#define FLAG_FRIENDLY (1 << 0)
 
 #define TEST_SEED 311
 
@@ -83,17 +82,20 @@ enum task_type {
 	TASK_NONE = 0,
 	TASK_CHOP_TREE,
 	TASK_MINE_ROCK,
+	TASK_MOW_GRASS,
 };
 
-#define FLAG_WALKABLE (1 << 0)
-#define FLAG_HAS_ITEM (1 << 1)
-#define FLAG_BLUE_PRINT (1 << 2)
+#define FLAG_CELL_WALKABLE (1 << 0)
+#define FLAG_CELL_HAS_ITEM (1 << 1)
+#define FLAG_CELL_BLUE_PRINT (1 << 2)
 
 struct map_cell { // 3 + 1 bytes
 	uint8_t object;		// Store enum object_type
 	uint8_t terrain;	// store enum terrain_type
 	uint8_t bitflags;	// Bitflags to store terrain state (e.g., roofed or burning)
 };
+
+#define FLAG_ENTITY_FRIENDLY (1 << 0)
 
 struct entity { // 14 + 2 bytes 
 	int16_t x;
@@ -139,14 +141,16 @@ struct entity_def { // 6 + 2 bytes
 	uint8_t attr;
 };
 
-struct object_def { // 14 + 2 bytes
+#define FLAG_OBJ_WALKABLE (1 << 0)
+#define FLAG_OBJ_PRODUCE (1 << 1)
+struct object_def { // 15 + 1 bytes
 	const char *sym_str;	// For multi-byte symbol 
 	char sym_char;		// For 1 byte symbol
 	uint8_t fc;
 	uint8_t bc;
 	uint8_t attr;
-	uint8_t add_bitflags;
-	uint8_t clear_bitflags;
+	uint8_t bitflags;
+	uint8_t associated_task; // enum task_type
 };
 
 struct item_def { // 12 bytes

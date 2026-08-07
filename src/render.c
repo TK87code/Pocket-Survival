@@ -26,7 +26,7 @@ void draw_ingame_clock(struct game_state *s)
 		fc = 15;
 		bc = 235;
 	} else if (hours <= 8) {
-		fc = 16;
+		fc = 1;
 		bc = 215;
 	} else if (hours <= 17) {
 		fc = 16;
@@ -53,16 +53,14 @@ void draw_terrains(struct game_state *s, int x, int y)
 	pkt_win_putc_color(&s->win_map, x, y, (enum pkt_color)fc, terrain_defs[t].bc, PKT_ATTR_NONE, sym);
 }
 
-
-
 void draw_objects(struct game_state *s, int x, int y)
 {
 	int wx = s->cam_x + x;
 	int wy = s->cam_y + y;
 	unsigned int o = s->map[wy][wx].object;
-	const struct object_def *od = &object_defs[o];
 
 	if (o != OBJ_NONE) {
+		const struct object_def *od = &object_defs[o];
 		if (od->sym_str != NULL)  
 			pkt_win_puts_color(&s->win_map, x, y, 
 					od->fc, od->bc, od->attr, od->sym_str); 

@@ -63,7 +63,7 @@ void entity_do_action(struct game_state *s)
 
 						struct map_cell nc = s->map[ny][nx];
 
-						if (nc.bitflags & FLAG_WALKABLE) {
+						if (nc.bitflags & FLAG_CELL_WALKABLE) {
 							e->x = nx;
 							e->y = ny;
 							timer = (entity_defs[e->type].base_move_ticks * 
@@ -75,10 +75,11 @@ void entity_do_action(struct game_state *s)
 
 				case ENT_STATE_WORK: {
 					const struct task *ts = &s->task_queue[e->current_task_id];
+					struct map_cell *c = &s->map[ts->target_y][ts->target_x];
+					unsigned int o = c->object;
+					c->object = OBJ_NONE;
 
-					s->map[ts->target_y][ts->target_x].object = OBJ_NONE;
-
-					if (s->dropped_item_count < MAX_DROPPED_ITEM) {
+					if ((object_defs[o].bitflags & FLAG_OBJ_PRODUCE) && (s->dropped_item_count < MAX_DROPPED_ITEM)) {
 						struct item *itm = &s->items[s->dropped_item_count];
 						itm->x = ts->target_x;
 						itm->y = ts->target_y;
@@ -117,7 +118,7 @@ static int entity_random_walk(struct game_state *s, int idx)
 
 	struct map_cell nc = s->map[ny][nx];
 
-	if (nc.bitflags & FLAG_WALKABLE) {
+	if (nc.bitflags & FLAG_CELL_WALKABLE) {
 		if (nx >= 0 && nx < MAP_COL)
 			e->x = nx; 
 		if (ny >= 0 && ny < MAP_ROW)
