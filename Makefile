@@ -1,7 +1,7 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -O2 -I vendor/pocket/include
+CFLAGS = -Wall -Wextra -O2 -I vendor/pocket/include -DPKT_DEBUG
 
-SRC = main.c
+SRC = $(wildcard src/*.c)
 
 ENGINE_SRC = $(wildcard vendor/pocket/src/engine/*.c)
 
