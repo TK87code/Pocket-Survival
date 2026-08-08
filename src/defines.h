@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include "ext/pkt_win.h"
+#include "pathfind.h"
 
 #define FPS 60
 
@@ -95,7 +96,10 @@ struct map_cell { // 3 + 1 bytes
 
 #define FLAG_ENTITY_FRIENDLY (1 << 0)
 
-struct entity { // 14 + 2 bytes 
+struct entity { // 30 + 2 bytes 
+	struct astar_pos path[128];
+	int path_len;
+	int path_index;
 	int16_t x;
 	int16_t y;
 	int16_t wait_timer;
@@ -177,6 +181,7 @@ struct game_state {
 	struct pkt_window win_status;
 	struct pkt_window win_command;
 	struct pkt_window win_log;
+	struct astar_context *astar_ctx;
 	
 	uint64_t global_ticks;
 	float game_minutes_per_real_second;

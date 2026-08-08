@@ -4,6 +4,7 @@
 #include <stdlib.h> // rand
 
 static int entity_random_walk(struct game_state *s, int idx);
+static int astar_cost_cb(int x, int y, void *user_data);
 
 void entity_do_action(struct game_state *s) 
 {
@@ -40,35 +41,57 @@ void entity_do_action(struct game_state *s)
 						     
 				case ENT_STATE_MOVE: {
 					struct task *ts = &s->task_queue[e->current_task_id];
-					//[REF] https://atmarkit.itmedia.co.jp/ait/articles/2405/16/news029.html
-					int dx = abs(e->x - ts->target_x);
-					int dy = abs(e->y - ts->target_y);
 
-					if (dx <= 1 && dy <= 1) {
+					int dist_to_target = abs(e->x - ts->target_x) + abs(e->y - ts->target_y);
+					if (dist_to_target <= 1) {
 						e->state = ENT_STATE_WORK;
 						timer = task_defs[ts->type].required_ticks;
-					} else {
-						int nx = e->x;
-						int ny = e->y;
+						e->path_len = 0;
+						break;
+					}
 
-						if (e->x < ts->target_x)
-							nx = e->x + 1;
-						else if (e->x > ts->target_x)
-							nx = e->x - 1;
+					if (e->path_len == 0) {
+						e->path_len = astar_find_path(
+								s->astar_ctx,
+								e->x, e->y, ts->target_x, ts->target_y,
+								e->path, 128,
+								astar_cost_cb, s);
+						e->path_index = 0;
 
-						if (e->y < ts->target_y)
-							ny = e->y + 1;
-						else if (e->y > ts->target_y)
-							ny = e->y - 1;
+						if (e->path_len == 0) {
+							e->current_task_id = -1;
+							e->state = ENT_STATE_IDLE;
+							break;
+						}
+					}
+					
+					if (e->path_index < e->path_len) {
+						int nx = e->path[e->path_index].x;
+						int ny = e->path[e->path_index].y;
 
-						struct map_cell nc = s->map[ny][nx];
+						if (nx == ts->target_x && ny == ts->target_y) {
+							e->path_index = e->path_len;
+						} else {
+							struct map_cell nc = s->map[ny][nx];
 
-						if (nc.bitflags & FLAG_CELL_WALKABLE) {
 							e->x = nx;
 							e->y = ny;
 							timer = (entity_defs[e->type].base_move_ticks * 
-									terrain_defs[nc.terrain].move_cost_percent) / 100; 
+									terrain_defs[nc.terrain].move_cost_percent) / 100;
+							e->path_index++;
 						}
+					}
+
+					if (e->path_index >= e->path_len) {
+						if (abs(e->x - ts->target_x) + abs(e->y - ts->target_y) <= 1) {
+							e->state = ENT_STATE_WORK;
+							timer = task_defs[ts->type].required_ticks;
+						} else {
+							e->state = ENT_STATE_WORK;
+							timer = task_defs[ts->type].required_ticks;
+						}
+
+						e->path_len = 0;
 					}
 					break;
 				}
@@ -90,6 +113,7 @@ void entity_do_action(struct game_state *s)
 					e->current_task_id = -1;
 					timer = 10;
 					e->state = ENT_STATE_IDLE;
+					e->path_len = 0;
 					break;
 				}
 			}
@@ -121,4 +145,20 @@ static int entity_random_walk(struct game_state *s, int idx)
 	} else {
 		return 10;
 	}
+}
+
+static int astar_cost_cb(int x, int y, void *user_data)
+{
+	struct game_state *s = (struct game_state *)user_data;
+
+	if (x < 0 || x >= MAP_COL || y < 0 || y >= MAP_ROW)
+		return -1;
+
+	struct map_cell c = s->map[y][x];
+
+	if ((c.bitflags & FLAG_CELL_WALKABLE) == 0) {
+		return -1;
+	}
+
+	return terrain_defs[c.terrain].move_cost_percent / 100;
 }

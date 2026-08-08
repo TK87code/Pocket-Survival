@@ -6,6 +6,7 @@
 #include "map.h"
 #include "render.h"
 #include "entity.h"
+#include "pathfind.h"
 #include <stdlib.h>	// atoi
 
 // === Proto Types ===
@@ -60,6 +61,10 @@ void game_init(void *user_data)
 	s->win_map = pkt_win_create(2, 1, VIEWPORT_COL, VIEWPORT_ROW);
 	s->win_status = pkt_win_create(0, 39, 80, 1);
 	s->win_command = pkt_win_create(80, 0, 40, 40);
+
+	size_t req_mem = astar_get_req_memsize(MAP_COL, MAP_ROW);
+	void *astar_buffer = malloc(req_mem);
+	s->astar_ctx = astar_init(MAP_COL, MAP_ROW, astar_buffer);
 
 	generate_map(s);	
 
