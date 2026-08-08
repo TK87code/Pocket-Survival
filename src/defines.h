@@ -72,14 +72,12 @@ enum entity_state {
 #define MAX_TASK 256
 
 enum work_type {
-	WORK_NONE = 0,
 	WORK_FORESTRY,
 	WORK_MINING,
 	WORK_CONSTRUCTION,
 };
 
 enum task_type {
-	TASK_NONE = 0,
 	TASK_CHOP_TREE,
 	TASK_MINE_ROCK,
 	TASK_MOW_GRASS,
@@ -116,11 +114,9 @@ struct item { // 7 + 1 bytes
 	uint8_t type;
 };
 
-struct task { // 9 + 6 = 16 bytes
+struct task { // 6 + 2 bytes
 	int16_t target_x;
 	int16_t target_y;
-	uint16_t req_amount;
-	uint8_t req_item;
 	uint8_t type;		 //enum task_type
 	int8_t assignee_id;
 };
@@ -142,7 +138,6 @@ struct entity_def { // 6 + 2 bytes
 };
 
 #define FLAG_OBJ_WALKABLE (1 << 0)
-#define FLAG_OBJ_PRODUCE (1 << 1)
 struct object_def { // 15 + 1 bytes
 	const char *sym_str;	// For multi-byte symbol 
 	char sym_char;		// For 1 byte symbol
@@ -161,9 +156,16 @@ struct item_def { // 12 bytes
 	uint8_t attr;
 };
 
-struct task_def { // 3 + 1 bytes
-	uint8_t work_type;
+#define FLAG_TASK_PRODUCTIVE (1 << 0)
+struct task_def { // 4 bytes
 	uint16_t required_ticks;
+	uint8_t work_type;
+	uint8_t bitflags;
+};
+
+struct drop_def { // 2 bytes
+	uint8_t item_type; // enum item_type
+	uint8_t amount;
 };
 
 struct game_state {

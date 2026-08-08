@@ -75,23 +75,15 @@ void entity_do_action(struct game_state *s)
 
 				case ENT_STATE_WORK: {
 					const struct task *ts = &s->task_queue[e->current_task_id];
-					struct map_cell *c = &s->map[ts->target_y][ts->target_x];
-					unsigned int o = c->object;
-					c->object = OBJ_NONE;
+					s->map[ts->target_y][ts->target_x].object = OBJ_NONE;
 
-					if ((object_defs[o].bitflags & FLAG_OBJ_PRODUCE) && (s->dropped_item_count < MAX_DROPPED_ITEM)) {
+					if ((task_defs[ts->type].bitflags & FLAG_TASK_PRODUCTIVE) 
+							&& (s->dropped_item_count < MAX_DROPPED_ITEM)) {
 						struct item *itm = &s->items[s->dropped_item_count];
 						itm->x = ts->target_x;
 						itm->y = ts->target_y;
-
-						if (ts->type == TASK_CHOP_TREE) {
-							itm->type = ITEM_WOOD;
-							itm->amount = 10;
-						} else if (ts->type == TASK_MINE_ROCK) {
-							itm->type = ITEM_STONE;
-							itm->amount = 5;
-						}
-
+						itm->type = drop_defs[ts->type].item_type;
+						itm->amount = drop_defs[ts->type].amount;
 						s->dropped_item_count += 1;
 					}
 
