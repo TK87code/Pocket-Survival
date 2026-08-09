@@ -7,12 +7,12 @@
 #define FLAG_CLOSED (1 << 0)
 #define FLAG_OPEN (1 << 1)
 
-struct astar_node { // 21 + 3 bytes;
-	unsigned int g; // real cost from start point to this node
-	unsigned int f; // g + heuristic cost from this node to the goal.
-	int heap_index;
-	int parent_map_index;
-	unsigned int search_id;
+struct astar_node { // 16 bytes in 16 bits mode, 24 bytes in 32 bits mode;
+	uint32_t search_id;
+	astar_cost_t g; // real cost from start point to this node
+	astar_cost_t f; // g + heuristic cost from this node to the goal.
+	astar_index_t heap_index;
+	astar_index_t parent_map_index;
 	uint8_t bitflags; 	
 };
 
@@ -26,7 +26,7 @@ struct astar_context {
 };
 
 static inline void check_neighbors(struct astar_context *ctx, struct astar_node *en, struct astar_node *cn, 
-		astar_callback cost_cb, void *user_data);
+		struct astar_request *req);
 static inline int get_map_index(struct astar_context *ctx, struct astar_node *n);
 static inline int get_x(struct astar_context *ctx, struct astar_node *n);
 static inline int get_y(struct astar_context *ctx, struct astar_node *n);
@@ -47,6 +47,9 @@ size_t astar_get_req_memsize(int width, int height)
 
 struct astar_context *astar_init(int width, int height, void *buffer)
 {
+	if ((size_t)(width * height) >= ASTAR_INDEX_MAX) 
+		return NULL;
+
 	char *ptr = (char *)buffer;
 
 	struct astar_context *ctx = (struct astar_context *)ptr;
@@ -66,17 +69,24 @@ struct astar_context *astar_init(int width, int height, void *buffer)
 	return ctx;
 }
 
-int astar_find_path(struct astar_context *ctx, int start_x, int start_y, int end_x, int end_y, struct astar_pos *out_path, int max_path_len, astar_callback cost_cb, void *user_data) 
+int astar_find_path(struct astar_context *ctx, struct astar_request *req) 
 {
-	ctx->search_id++;
+	if (ctx == NULL || req == NULL)
+		return -1;
+	
+	int num_steps = 0;
 
-	struct astar_node *sn = &ctx->nodes[start_y * ctx->width + start_x];
-	struct astar_node *en = &ctx->nodes[end_y * ctx->width + end_x];
+	ctx->search_id++;
+	if (ctx->search_id == 0)
+		ctx->search_id = 1;
+
+	struct astar_node *sn = &ctx->nodes[req->start.y * ctx->width + req->start.x];
+	struct astar_node *en = &ctx->nodes[req->end.y * ctx->width + req->end.x];
 
 	init_node_if_needed(ctx, sn);
 
 	sn->g = 0;
-	int dist_stoe = distance(ctx, sn, en);
+	unsigned int dist_stoe = distance(ctx, sn, en);
 	sn->f = sn->g + dist_stoe; 
 
 	struct astar_node *closest_node = sn;
@@ -97,51 +107,52 @@ int astar_find_path(struct astar_context *ctx, int start_x, int start_y, int end
 		// checking if current node is the end node
 		if (cn == en) {
 			int idx = 0;
-			while (cn->parent_map_index != -1 && idx < max_path_len) {
-				out_path[idx].x = get_x(ctx, cn);
-				out_path[idx].y = get_y(ctx, cn);
+			while (cn->parent_map_index != ASTAR_INDEX_MAX && idx < req->max_path_len) {
+				req->out_path[idx].x = get_x(ctx, cn);
+				req->out_path[idx].y = get_y(ctx, cn);
 				cn = &ctx->nodes[cn->parent_map_index];
 				idx++;
 			}	
 			// reversing output array
 			for (int i = 0; i < idx / 2; i++) {
-				struct astar_pos tmp = out_path[i];
-				out_path[i] = out_path[(idx - 1) - i];
-				out_path[(idx - 1) - i] = tmp;
+				struct astar_pos tmp = req->out_path[i];
+				req->out_path[i] = req->out_path[(idx - 1) - i];
+				req->out_path[(idx - 1) - i] = tmp;
 			}
-
-			return idx;
+			
+			num_steps = idx;
+			return num_steps;
 		}
 
 		cn->bitflags &= ~FLAG_OPEN;
 		cn->bitflags |= FLAG_CLOSED;
 
-		check_neighbors(ctx, en, cn, cost_cb, user_data);
+		check_neighbors(ctx, en, cn, req);
 	}
 
 	if (closest_node != sn) {
 		int idx = 0;
 		struct astar_node *curr = closest_node;
-		while (curr->parent_map_index != -1 && idx < max_path_len) {
-			out_path[idx].x = get_x(ctx, curr);
-			out_path[idx].y = get_y(ctx, curr);
+		while (curr->parent_map_index != ASTAR_INDEX_MAX && idx < req->max_path_len) {
+			req->out_path[idx].x = get_x(ctx, curr);
+			req->out_path[idx].y = get_y(ctx, curr);
 			curr = &ctx->nodes[curr->parent_map_index];
 			idx++;
 		}
 
 		for (int i = 0; i < idx / 2; i++) {
-			struct astar_pos tmp = out_path[i];
-			out_path[i] = out_path[(idx - 1) - i];
-			out_path[(idx - 1) - i] = tmp;
+			struct astar_pos tmp = req->out_path[i];
+			req->out_path[i] = req->out_path[(idx - 1) - i];
+			req->out_path[(idx - 1) - i] = tmp;
 		}
-
-		return idx;
+		num_steps = idx;
+		return num_steps;
 	}
 
-	return 0;
+	return num_steps;
 }
 
-static inline void check_neighbors(struct astar_context *ctx, struct astar_node *en, struct astar_node *cn, astar_callback cost_cb, void * user_data)
+static inline void check_neighbors(struct astar_context *ctx, struct astar_node *en, struct astar_node *cn, struct astar_request *req)
 {
 	for (int j = 0; j < 4; j++) {
 		struct astar_node *nn = NULL;
@@ -162,7 +173,7 @@ static inline void check_neighbors(struct astar_context *ctx, struct astar_node 
 
 		init_node_if_needed(ctx, nn);	
 
-		int move_cost = cost_cb(get_x(ctx, nn), get_y(ctx, nn), user_data);
+		int move_cost = req->cost_cb(get_x(ctx, nn), get_y(ctx, nn), req->user_data);
 
 		if (nn == en) {
 			move_cost = 1;
@@ -245,7 +256,7 @@ static struct astar_node *pop_openlist(struct astar_context *ctx)
 		return NULL;
 
 	struct astar_node *rn = ctx->openlist[0];
-	rn->heap_index = -1;
+	rn->heap_index = ASTAR_INDEX_MAX;
 
 	(ctx->openlist_count)--;
 	if (ctx->openlist_count > 0) {
@@ -283,11 +294,11 @@ static struct astar_node *pop_openlist(struct astar_context *ctx)
 static void init_node_if_needed(struct astar_context *ctx, struct astar_node *n)
 {
 	if (n->search_id != ctx->search_id) {
-		n->g = UINT_MAX;
-		n->f = UINT_MAX;
-		n->parent_map_index = -1;
+		n->g = ASTAR_COST_MAX;
+		n->f = ASTAR_COST_MAX;
+		n->parent_map_index = ASTAR_INDEX_MAX;
+		n->heap_index = ASTAR_INDEX_MAX;
 		n->bitflags = 0;
-		n->heap_index = -1;
 		n->search_id = ctx->search_id;
 	}
 }

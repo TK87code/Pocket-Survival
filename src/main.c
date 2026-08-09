@@ -9,6 +9,8 @@
 #include "pathfind.h"
 #include <stdlib.h>	// atoi
 
+#define ASTAR_OPTIMIZE_16BIT
+
 // === Proto Types ===
 
 // callbacks

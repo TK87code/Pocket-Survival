@@ -51,11 +51,17 @@ void entity_do_action(struct game_state *s)
 					}
 
 					if (e->path_len == 0) {
-						e->path_len = astar_find_path(
-								s->astar_ctx,
-								e->x, e->y, ts->target_x, ts->target_y,
-								e->path, 128,
-								astar_cost_cb, s);
+						struct astar_request req = {
+							.out_path = e->path,
+							.user_data = s,
+							.cost_cb = astar_cost_cb,
+							.start = {e->x, e->y},
+							.end = {ts->target_x, ts->target_y},
+							.max_path_len = 128,
+						};
+
+						e->path_len = astar_find_path(s->astar_ctx, &req);
+
 						e->path_index = 0;
 
 						if (e->path_len == 0) {
@@ -100,8 +106,11 @@ void entity_do_action(struct game_state *s)
 
 				case ENT_STATE_WORK: {
 					struct task *ts = &s->task_queue[e->current_task_id];
-					s->map[ts->target_y][ts->target_x].object = OBJ_NONE;
-
+					struct map_cell *cell =&s->map[ts->target_y][ts->target_x];
+					
+					cell->object = OBJ_NONE;
+					cell->bitflags |= FLAG_CELL_WALKABLE;
+					
 					if ((task_defs[ts->type].bitflags & FLAG_TASK_PRODUCTIVE) 
 							&& (s->dropped_item_count < MAX_DROPPED_ITEM)) {
 						struct item *itm = &s->items[s->dropped_item_count];
