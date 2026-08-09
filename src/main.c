@@ -15,6 +15,7 @@
 void game_init(void *user_data);
 void game_update(void *user_data, float dt);
 void game_draw(void *user_data);
+static void queue_task(struct game_state *s);
 
 int main(int argc, char *argv[]) 
 {
@@ -118,18 +119,7 @@ void game_update(void *user_data, float dt)
 				s->cursor_x += 1;
 
 			if (e.data.key.key_code == PKT_KEY_SPACE) {
-				unsigned int o = s->map[s->cursor_y][s->cursor_x].object;
-				if (o == OBJ_NONE)
-					continue;
-				unsigned int t_type = object_defs[o].associated_task;
-				struct task *ts = &s->task_queue[s->task_count];
-
-				ts->type = t_type;
-				ts->target_x = s->cursor_x;
-				ts->target_y = s->cursor_y;
-				ts->assignee_id = -1;
-				if (s->task_count < MAX_TASK)
-					s->task_count += 1;
+				queue_task(s);	
 			}
 		}
 	}
@@ -188,4 +178,30 @@ void game_draw(void *user_data)
 			11, 16, PKT_ATTR_BLINK, 'X');
 }
 
+static void queue_task(struct game_state *s)
+{
+	unsigned int o = s->map[s->cursor_y][s->cursor_x].object;
+	if (o == OBJ_NONE)
+		return;
 
+	int slot_index = -1;
+	for (int i = 0; i < s->task_count; i++) {
+		if (s->task_queue[i].assignee_id == TASK_ABORTED) {
+			slot_index = i;
+			break;
+		}
+	}
+
+	if (slot_index == -1 && s->task_count < MAX_TASK) {
+		slot_index = s->task_count;
+		s->task_count += 1;
+	}
+
+	if (slot_index != -1) {
+		struct task *ts = &s->task_queue[slot_index];
+		ts->type = object_defs[o].associated_task;
+		ts->target_x = s->cursor_x;
+		ts->target_y = s->cursor_y;
+		ts->assignee_id = TASK_WAITING;
+	}
+}

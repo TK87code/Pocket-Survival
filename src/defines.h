@@ -118,6 +118,9 @@ struct item { // 7 + 1 bytes
 	uint8_t type;
 };
 
+#define TASK_WAITING -1
+#define TASK_ABORTED -2
+
 struct task { // 6 + 2 bytes
 	int16_t target_x;
 	int16_t target_y;

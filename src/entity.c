@@ -24,7 +24,7 @@ void entity_do_action(struct game_state *s)
 
 					for (int j = 0; j < s->task_count; j++) {
 						struct task *ts = &s->task_queue[j];
-						if (ts->assignee_id == -1) {
+						if (ts->assignee_id == TASK_WAITING) {
 							e->current_task_id = j;
 							e->state = ENT_STATE_MOVE;
 							ts->assignee_id = i;
@@ -59,6 +59,7 @@ void entity_do_action(struct game_state *s)
 						e->path_index = 0;
 
 						if (e->path_len == 0) {
+							ts->assignee_id = TASK_ABORTED;
 							e->current_task_id = -1;
 							e->state = ENT_STATE_IDLE;
 							break;
@@ -87,8 +88,9 @@ void entity_do_action(struct game_state *s)
 							e->state = ENT_STATE_WORK;
 							timer = task_defs[ts->type].required_ticks;
 						} else {
-							e->state = ENT_STATE_WORK;
-							timer = task_defs[ts->type].required_ticks;
+							ts->assignee_id = TASK_ABORTED;
+							e->current_task_id = -1;
+							e->state = ENT_STATE_IDLE;
 						}
 
 						e->path_len = 0;
@@ -97,7 +99,7 @@ void entity_do_action(struct game_state *s)
 				}
 
 				case ENT_STATE_WORK: {
-					const struct task *ts = &s->task_queue[e->current_task_id];
+					struct task *ts = &s->task_queue[e->current_task_id];
 					s->map[ts->target_y][ts->target_x].object = OBJ_NONE;
 
 					if ((task_defs[ts->type].bitflags & FLAG_TASK_PRODUCTIVE) 
@@ -110,6 +112,7 @@ void entity_do_action(struct game_state *s)
 						s->dropped_item_count += 1;
 					}
 
+					ts->assignee_id = TASK_ABORTED;
 					e->current_task_id = -1;
 					timer = 10;
 					e->state = ENT_STATE_IDLE;
