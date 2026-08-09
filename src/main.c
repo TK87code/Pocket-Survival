@@ -47,6 +47,7 @@ int main(int argc, char *argv[])
 	pkt_ignite();
 	pkt_cleanup();
 
+	free(state.astar_ctx);
 	return 0;
 }
 

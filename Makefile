@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -O2 -I vendor/pocket/include -DPKT_DEBUG
+CFLAGS = -Wall -Wextra -O2 -I vendor/pocket/include -DPKT_DEBUG -g -fsanitize=address
 
 SRC = $(wildcard src/*.c)
 

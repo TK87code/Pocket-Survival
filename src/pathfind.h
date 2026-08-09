@@ -2,12 +2,13 @@
 #define PATHFIND_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 struct astar_context;
 
-struct astar_pos { // 8 bytes 
-	int x;
-	int y;
+struct astar_pos { // 4 bytes 
+	uint16_t x;
+	uint16_t y;
 };
 
 /**

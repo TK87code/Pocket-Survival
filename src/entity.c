@@ -132,16 +132,19 @@ static int entity_random_walk(struct game_state *s, int idx)
 
 	int dx = rand() % 3 - 1; // -1 ~ 1
 	int dy = rand() % 3 - 1;
-	int nx = e->x + dx;
-	int ny = e->y + dy;
+	int nx = e->x;
+	int ny = e->y;
+
+	if (e->x + dx >= 0 && e->x + dx < MAP_COL)
+		nx = e->x + dx;
+	if (e->y + dy >= 0 && e->y + dy < MAP_ROW)
+		ny = e->y + dy;
 
 	struct map_cell nc = s->map[ny][nx];
 
 	if (nc.bitflags & FLAG_CELL_WALKABLE) {
-		if (nx >= 0 && nx < MAP_COL)
-			e->x = nx; 
-		if (ny >= 0 && ny < MAP_ROW)
-			e->y = ny;
+		e->x = nx; 
+		e->y = ny;
 
 		return 2 * ((entity_defs[e->type].base_move_ticks *
 				terrain_defs[nc.terrain].move_cost_percent) / 100);
