@@ -20,8 +20,10 @@ static inline void handle_input(struct game_state *s, int key_code);
 int main(int argc, char *argv[]) 
 {
 	struct game_state *state = calloc(1, sizeof(struct game_state));
-	if (argc == 2)
-		state->seed = atoi(argv[1]);
+	if (!state)
+		PKT_LOG(PKT_LOG_ERROR, "Failed to allocate memory.");
+
+	state->seed = (argc == 2) ? atoi(argv[1]) : 97;
 
 	struct pkt_config config = pkt_get_default_config();
 	config.on_init = game_init;
