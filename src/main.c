@@ -18,6 +18,7 @@ void game_init(void *user_data);
 void game_update(void *user_data, float dt);
 void game_draw(void *user_data);
 static void queue_task(struct game_state *s);
+static inline void handle_input(struct game_state *s, int key_code);
 
 int main(int argc, char *argv[]) 
 {
@@ -57,7 +58,6 @@ void game_init(void *user_data)
 {
 	struct game_state *s = (struct game_state *)user_data;
 
-	s->game_minutes_per_real_second = 1.0f; 
 	s->tick_accumulator = 0.0f;
 	s->time_scale = 1.0f;
 
@@ -98,8 +98,8 @@ void game_init(void *user_data)
 		.bitflags = FLAG_ENTITY_FRIENDLY,
 	};
 
-	s->cursor_x = 43;
-	s->cursor_y = 12;
+	s->cursor_lx = VIEWPORT_COL / 2;
+	s->cursor_ly = VIEWPORT_ROW / 2;
 }
 
 void game_update(void *user_data, float dt)
@@ -108,36 +108,18 @@ void game_update(void *user_data, float dt)
 	struct pkt_event e;
 
 	while (pkt_poll_event(&e) == 0) {
-		if (e.type == PKT_EVENT_KEY_PRESSED) {
-			if (e.data.key.key_code == PKT_KEY_ESCAPE) 
-				pkt_quit();
-
-			if (e.data.key.key_code == 'k')
-				s->cursor_y -= 1;
-			if (e.data.key.key_code == 'j')
-				s->cursor_y += 1;
-			if (e.data.key.key_code == 'h')
-				s->cursor_x -= 1;
-			if (e.data.key.key_code == 'l')
-				s->cursor_x += 1;
-
-			if (e.data.key.key_code == PKT_KEY_SPACE) {
-				queue_task(s);	
-			}
-		}
+		if (e.type == PKT_EVENT_KEY_PRESSED) 
+			handle_input(s, e.data.key.key_code);
 	}
 
-	if (s->cursor_x < 0)
-		s->cursor_x = 0;
-	if (s->cursor_x >= MAP_COL)
-		s->cursor_x = MAP_COL - 1;
-	if (s->cursor_y < 0)
-		s->cursor_y = 0;
-	if (s->cursor_y >= MAP_ROW)
-		s->cursor_y = MAP_ROW - 1;
-
-	s->cam_x = (s->cursor_x / VIEWPORT_COL) * VIEWPORT_COL;	
-	s->cam_y = (s->cursor_y / VIEWPORT_ROW) * VIEWPORT_ROW;	
+	if (s->cursor_lx < 0)
+		s->cursor_lx = 0;
+	if (s->cursor_lx > VIEWPORT_COL - 1)
+		s->cursor_lx = VIEWPORT_COL - 1;
+	if (s->cursor_ly < 0)
+		s->cursor_ly = 0;
+	if (s->cursor_ly > VIEWPORT_ROW - 1)
+		s->cursor_ly = VIEWPORT_ROW - 1;
 
 	if (s->cam_x < 0)
 		s->cam_x = 0;
@@ -164,24 +146,26 @@ void game_draw(void *user_data)
 	
 	draw_command_box(s);
 	draw_ingame_clock(s);
+	draw_speed_indicator(s);
 
-	for (int y = 0; y < VIEWPORT_ROW; y++) {
-		for (int x = 0; x < VIEWPORT_COL; x++) {
-			draw_terrains(s, x, y);
-			draw_objects(s, x, y);
+	for (int ly = 0; ly < VIEWPORT_ROW; ly++) {
+		for (int lx = 0; lx < VIEWPORT_COL; lx++) {
+			draw_terrains(s, lx, ly);
+			draw_objects(s, lx, ly);
+			draw_markers(s, lx, ly);
 		}
 	}
 	draw_items(s);
 	draw_entities(s);
 
-	pkt_win_putc_color(&s->win_map, s->cursor_x - s->cam_x, s->cursor_y - s->cam_y, 
-			11, 16, PKT_ATTR_BLINK, 'X');
+	if (s->mode == MODE_DESIGNATE)
+		pkt_win_putc_color(&s->win_map, s->cursor_lx, s->cursor_ly, 11, 16, PKT_ATTR_BLINK, 'X');
 }
 
 static void queue_task(struct game_state *s)
 {
-	unsigned int o = s->map[s->cursor_y][s->cursor_x].object;
-	if (o == OBJ_NONE)
+	struct map_cell *c = &s->map[s->cursor_ly + s->cam_y][s->cursor_lx + s->cam_x];
+	if (c->object == OBJ_NONE)
 		return;
 
 	int slot_index = -1;
@@ -199,9 +183,42 @@ static void queue_task(struct game_state *s)
 
 	if (slot_index != -1) {
 		struct task *ts = &s->task_queue[slot_index];
-		ts->type = object_defs[o].associated_task;
-		ts->target_x = s->cursor_x;
-		ts->target_y = s->cursor_y;
+		ts->type = object_defs[c->object].associated_task;
+		ts->target_x = s->cursor_lx + s->cam_x;
+		ts->target_y = s->cursor_ly + s->cam_y;
 		ts->assignee_id = TASK_WAITING;
+		c->bitflags |= FLAG_CELL_MARKED;
 	}
+}
+
+static inline void handle_input(struct game_state *s, int key_code)
+{
+	if (key_code == PKT_KEY_ESCAPE && s->mode == MODE_DESIGNATE) {
+		s->mode = MODE_DEFAULT;
+		s->time_scale = 1.0f;
+	}
+
+	if (key_code == PKT_KEY_SPACE && s->mode == MODE_DEFAULT) 
+		(s->time_scale == 0.0f) ? (s->time_scale = 1.0f) : (s->time_scale = 0.0f);
+	if (key_code == PKT_KEY_UP)
+		(s->time_scale == 3.0f) ? (s->time_scale = 3.0f) : (s->time_scale += 0.5f);
+	if (key_code == PKT_KEY_DOWN)
+		(s->time_scale == 0.0f) ? (s->time_scale = 0.0f) : (s->time_scale -= 0.5f);
+
+	if (key_code == 'd') {
+		s->mode = MODE_DESIGNATE;
+		s->time_scale = 0.0f;
+	}
+
+	if (key_code == PKT_KEY_ENTER && s->mode == MODE_DESIGNATE)
+		queue_task(s);
+
+	if (key_code == 'h')
+		(s->mode == MODE_DEFAULT) ? (s->cam_x -= 10) : (s->cursor_lx -= 1);
+	if (key_code == 'l')
+		(s->mode == MODE_DEFAULT) ? (s->cam_x += 10) : (s->cursor_lx += 1);
+	if (key_code == 'k')
+		(s->mode == MODE_DEFAULT) ? (s->cam_y -= 10) : (s->cursor_ly -= 1);
+	if (key_code == 'j')
+		(s->mode == MODE_DEFAULT) ? (s->cam_y += 10) : (s->cursor_ly += 1);
 }

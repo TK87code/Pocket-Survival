@@ -34,6 +34,11 @@
 
 #define TEST_SEED 311
 
+enum game_mode {
+	MODE_DEFAULT = 0,
+	MODE_DESIGNATE,
+};
+
 enum terrain_type {
 	TERRAIN_DEEP_WATER = 0,
 	TERRAIN_GRAVEL,
@@ -87,6 +92,7 @@ enum task_type {
 #define FLAG_CELL_WALKABLE (1 << 0)
 #define FLAG_CELL_HAS_ITEM (1 << 1)
 #define FLAG_CELL_BLUE_PRINT (1 << 2)
+#define FLAG_CELL_MARKED (1 << 3)
 
 struct map_cell { // 3 + 1 bytes
 	uint8_t object;		// Store enum object_type
@@ -187,7 +193,6 @@ struct game_state {
 	struct astar_context *astar_ctx;
 	
 	uint64_t global_ticks;
-	float game_minutes_per_real_second;
 
 	float tick_accumulator;
 	float time_scale;
@@ -196,13 +201,14 @@ struct game_state {
 	int task_count;
 	int dropped_item_count;
 
-	int cursor_x;
-	int cursor_y;
+	int cursor_lx;
+	int cursor_ly;
 
 	int cam_x;
 	int cam_y;
 
 	int seed;
+	enum game_mode mode;
 };
 
 #endif // DEFINES_H

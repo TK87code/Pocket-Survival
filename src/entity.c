@@ -110,6 +110,7 @@ void entity_do_action(struct game_state *s)
 					
 					cell->object = OBJ_NONE;
 					cell->bitflags |= FLAG_CELL_WALKABLE;
+					cell->bitflags &= ~FLAG_CELL_MARKED;
 					
 					if ((task_defs[ts->type].bitflags & FLAG_TASK_PRODUCTIVE) 
 							&& (s->dropped_item_count < MAX_DROPPED_ITEM)) {

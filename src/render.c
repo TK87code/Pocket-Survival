@@ -1,6 +1,7 @@
 #include "render.h"
 #include "defines.h"
 #include "data.h"
+#include "ext/pkt_win.h"
 
 static void diversify_terrains(int wx, int wy, char *sym, unsigned int *fc, unsigned int t);
 
@@ -36,37 +37,55 @@ inline void draw_ingame_clock(struct game_state *s)
 		bc = 235;
 	}
 
-	pkt_win_printf_color(&s->win_status, 2, 0, (enum pkt_color)fc, (enum pkt_color)bc, PKT_ATTR_NONE, 
+	pkt_win_printf_color(&s->win_status, 2, 0, (enum pkt_color)fc, (enum pkt_color)bc, PKT_ATTR_BOLD, 
 			"Day %d - %s %02d:%02d", days, ampm, display_hour, mins);
 }
 
-inline void draw_terrains(struct game_state *s, int x, int y)
+inline void draw_speed_indicator(struct game_state *s)
 {
-	int wx = s->cam_x + x;
-	int wy = s->cam_y + y;
+	if (s->time_scale == 0.0f)
+		pkt_win_puts_color(&s->win_log, 2, 0, 16, 6, PKT_ATTR_BOLD, "*PAUSED*");
+	else
+		pkt_win_printf_color(&s->win_log, 2, 0, 16, 6, PKT_ATTR_BOLD, "SPEED: x%.1f", s->time_scale);	
+}
+
+inline void draw_terrains(struct game_state *s, int lx, int ly)
+{
+	int wx = s->cam_x + lx;
+	int wy = s->cam_y + ly;
 	unsigned int t = s->map[wy][wx].terrain;
 	char sym = terrain_defs[t].sym;
 	unsigned int fc = terrain_defs[t].fc;
 
 	diversify_terrains(wx, wy, &sym, &fc, t);	
 
-	pkt_win_putc_color(&s->win_map, x, y, (enum pkt_color)fc, terrain_defs[t].bc, PKT_ATTR_NONE, sym);
+	pkt_win_putc_color(&s->win_map, lx, ly, (enum pkt_color)fc, terrain_defs[t].bc, PKT_ATTR_NONE, sym);
 }
 
-inline void draw_objects(struct game_state *s, int x, int y)
+inline void draw_objects(struct game_state *s, int lx, int ly)
 {
-	int wx = s->cam_x + x;
-	int wy = s->cam_y + y;
+	int wx = s->cam_x + lx;
+	int wy = s->cam_y + ly;
 	unsigned int o = s->map[wy][wx].object;
 
 	if (o != OBJ_NONE) {
 		const struct object_def *od = &object_defs[o];
 		if (od->sym_str != NULL)  
-			pkt_win_puts_color(&s->win_map, x, y, 
+			pkt_win_puts_color(&s->win_map, lx, ly, 
 					od->fc, od->bc, od->attr, od->sym_str); 
 		else
-			pkt_win_putc_color(&s->win_map, x, y, 
+			pkt_win_putc_color(&s->win_map, lx, ly, 
 					od->fc, od->bc, od->attr, od->sym_char); 
+	}
+}
+
+inline void draw_markers(struct game_state *s, int lx, int ly)
+{
+	int wx = s->cam_x + lx;
+	int wy = s->cam_y + ly;
+	struct map_cell *c = &s->map[wy][wx];
+	if (c->bitflags & FLAG_CELL_MARKED) {
+		pkt_win_puts_color(&s->win_map, lx, ly, 1, 16, PKT_ATTR_BOLD, "¤");
 	}
 }
 
@@ -154,7 +173,31 @@ static void diversify_terrains(int wx, int wy, char *sym, unsigned int *fc, unsi
 
 inline void draw_command_box(struct game_state *s)
 {
-	pkt_win_fill(&s->win_command, 16);
-	pkt_win_box_color(&s->win_command, 16, 237, PKT_ATTR_NONE);
-	pkt_win_puts(&s->win_command, 2, 0, " COMMANDS ");
+	struct pkt_window *w = &s->win_command;
+	enum pkt_color fc_c = 10; // fcolor for commands
+	enum pkt_color fc_d = PKT_COLOR_WHITE; // fcolor for description
+	enum pkt_color bc = 16; 
+
+	pkt_win_fill(w, bc);
+	pkt_win_box(w);
+	pkt_win_puts(w, 2, 0, " COMMANDS ");
+
+	switch (s->mode) {
+		case MODE_DEFAULT:
+			pkt_win_putc_color(w, 2, 1, fc_c, bc, PKT_ATTR_BOLD, 'd');
+			pkt_win_puts_color(w, 3, 1, fc_d, bc, PKT_ATTR_BOLD, ": Designations");
+
+			pkt_win_puts_color(w, 2, 37, fc_c, bc, PKT_ATTR_BOLD, "SPACE");
+			pkt_win_puts_color(w, 7, 37, fc_d, bc, PKT_ATTR_BOLD, ": Pause game");
+			pkt_win_puts_color(w, 2, 38, fc_c, bc, PKT_ATTR_BOLD, "Arrow UP/DOWN");
+			pkt_win_puts_color(w, 15, 38,fc_d, bc, PKT_ATTR_BOLD, ": Change speed");
+			break;
+		case MODE_DESIGNATE:
+			pkt_win_puts_color(w, 2, 1, fc_c, bc, PKT_ATTR_BOLD, "Enter");
+			pkt_win_puts_color(w, 7, 1, fc_d, bc, PKT_ATTR_BOLD, ": Designate"); 
+			pkt_win_puts_color(w, 19, 1, fc_c, bc, PKT_ATTR_BOLD, "ESC");
+			pkt_win_puts_color(w, 22, 1,fc_d, bc, PKT_ATTR_BOLD, ": Done"); 
+			break;
+	}	
+
 }
