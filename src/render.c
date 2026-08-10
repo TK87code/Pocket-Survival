@@ -4,7 +4,7 @@
 
 static void diversify_terrains(int wx, int wy, char *sym, unsigned int *fc, unsigned int t);
 
-void draw_ingame_clock(struct game_state *s)
+inline void draw_ingame_clock(struct game_state *s)
 {
 	int elapsed_mins = s->global_ticks / TICKS_PER_GAME_MINUTE;
 	int abs_mins = elapsed_mins + (9 * 60); // New game starts from Day 1 9am;
@@ -40,7 +40,7 @@ void draw_ingame_clock(struct game_state *s)
 			"Day %d - %s %02d:%02d", days, ampm, display_hour, mins);
 }
 
-void draw_terrains(struct game_state *s, int x, int y)
+inline void draw_terrains(struct game_state *s, int x, int y)
 {
 	int wx = s->cam_x + x;
 	int wy = s->cam_y + y;
@@ -53,7 +53,7 @@ void draw_terrains(struct game_state *s, int x, int y)
 	pkt_win_putc_color(&s->win_map, x, y, (enum pkt_color)fc, terrain_defs[t].bc, PKT_ATTR_NONE, sym);
 }
 
-void draw_objects(struct game_state *s, int x, int y)
+inline void draw_objects(struct game_state *s, int x, int y)
 {
 	int wx = s->cam_x + x;
 	int wy = s->cam_y + y;
@@ -70,7 +70,7 @@ void draw_objects(struct game_state *s, int x, int y)
 	}
 }
 
-void draw_entities(struct game_state *s)
+inline void draw_entities(struct game_state *s)
 {
 	for (int i = 0; i < s->entity_count; i++) {
 		struct entity *e = &s->entities[i];
@@ -97,7 +97,7 @@ void draw_entities(struct game_state *s)
 	}
 }
 
-void draw_items(struct game_state *s)
+inline void draw_items(struct game_state *s)
 {
 	for (int i = 0; i < s->dropped_item_count; i++) {
 		struct item *itm = &s->items[i];
@@ -150,4 +150,11 @@ static void diversify_terrains(int wx, int wy, char *sym, unsigned int *fc, unsi
 			*fc = 58;
 		}
 	}
+}
+
+inline void draw_command_box(struct game_state *s)
+{
+	pkt_win_fill(&s->win_command, 16);
+	pkt_win_box_color(&s->win_command, 16, 237, PKT_ATTR_NONE);
+	pkt_win_puts(&s->win_command, 2, 0, " COMMANDS ");
 }

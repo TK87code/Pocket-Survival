@@ -161,10 +161,8 @@ void game_update(void *user_data, float dt)
 void game_draw(void *user_data)
 {
 	struct game_state *s = (struct game_state *)user_data;
-	pkt_win_box_color(&s->win_command, 16, 237, PKT_ATTR_NONE);
-
-	pkt_win_puts(&s->win_command, 2, 0, " COMMANDS ");
-	pkt_win_puts(&s->win_log, 0, 0, " log ");
+	
+	draw_command_box(s);
 	draw_ingame_clock(s);
 
 	for (int y = 0; y < VIEWPORT_ROW; y++) {
@@ -173,7 +171,6 @@ void game_draw(void *user_data)
 			draw_objects(s, x, y);
 		}
 	}
-
 	draw_items(s);
 	draw_entities(s);
 
