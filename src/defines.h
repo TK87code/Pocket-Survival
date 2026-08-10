@@ -207,6 +207,10 @@ struct game_state {
 	int cam_x;
 	int cam_y;
 
+	int is_dragging;
+	int designate_start_wx;
+	int designate_start_wy;
+
 	int seed;
 	enum game_mode mode;
 };

@@ -11,24 +11,21 @@
 
 #define ASTAR_OPTIMIZE_16BIT
 
-// === Proto Types ===
-
-// callbacks
 void game_init(void *user_data);
 void game_update(void *user_data, float dt);
 void game_draw(void *user_data);
-static void queue_task(struct game_state *s);
+static void queue_task(struct game_state *s, int wx, int wy);
 static inline void handle_input(struct game_state *s, int key_code);
 
 int main(int argc, char *argv[]) 
 {
-	struct game_state state = {0};
+	struct game_state *state = calloc(1, sizeof(struct game_state));
 	if (argc == 2)
-		state.seed = atoi(argv[1]);
+		state->seed = atoi(argv[1]);
 
 	struct pkt_config config = pkt_get_default_config();
 	config.on_init = game_init;
-	config.user_data = &state;
+	config.user_data = state;
 	config.target_fps = FPS;
 	config.default_fcolor = 16;
 	config.default_bcolor = 237;
@@ -42,7 +39,7 @@ int main(int argc, char *argv[])
 	struct pkt_scene scene = {0};
 	scene.on_update = game_update;
 	scene.on_draw = game_draw;
-	scene.user_data = &state;
+	scene.user_data = state;
 
 	pkt_register_scene(0, &scene);
 	pkt_swap_scene(0);
@@ -50,7 +47,7 @@ int main(int argc, char *argv[])
 	pkt_ignite();
 	pkt_cleanup();
 
-	free(state.astar_ctx);
+	free(state->astar_ctx);
 	return 0;
 }
 
@@ -159,14 +156,12 @@ void game_draw(void *user_data)
 	draw_entities(s);
 
 	if (s->mode == MODE_DESIGNATE)
-		pkt_win_putc_color(&s->win_map, s->cursor_lx, s->cursor_ly, 11, 16, PKT_ATTR_BLINK, 'X');
+		draw_cursor(s);
 }
 
-static void queue_task(struct game_state *s)
+static void queue_task(struct game_state *s, int wx, int wy)
 {
-	struct map_cell *c = &s->map[s->cursor_ly + s->cam_y][s->cursor_lx + s->cam_x];
-	if (c->object == OBJ_NONE)
-		return;
+	struct map_cell *c = &s->map[wy][wx];
 
 	int slot_index = -1;
 	for (int i = 0; i < s->task_count; i++) {
@@ -184,8 +179,8 @@ static void queue_task(struct game_state *s)
 	if (slot_index != -1) {
 		struct task *ts = &s->task_queue[slot_index];
 		ts->type = object_defs[c->object].associated_task;
-		ts->target_x = s->cursor_lx + s->cam_x;
-		ts->target_y = s->cursor_ly + s->cam_y;
+		ts->target_x = wx;
+		ts->target_y = wy;
 		ts->assignee_id = TASK_WAITING;
 		c->bitflags |= FLAG_CELL_MARKED;
 	}
@@ -210,8 +205,30 @@ static inline void handle_input(struct game_state *s, int key_code)
 		s->time_scale = 0.0f;
 	}
 
-	if (key_code == PKT_KEY_ENTER && s->mode == MODE_DESIGNATE)
-		queue_task(s);
+	if (key_code == PKT_KEY_ENTER && s->mode == MODE_DESIGNATE) {
+		if (s->is_dragging == 0) {
+			s->is_dragging = 1;
+			s->designate_start_wx = s->cursor_lx + s->cam_x;
+			s->designate_start_wy = s->cursor_ly + s->cam_y;
+		} else {
+			int cursor_wx = s->cursor_lx + s->cam_x;
+			int cursor_wy = s->cursor_ly + s->cam_y;
+			int min_x = (cursor_wx <= s->designate_start_wx) ? cursor_wx : s->designate_start_wx;
+			int min_y = (cursor_wy <= s->designate_start_wy) ? cursor_wy : s->designate_start_wy;
+			int max_x = (min_x == s->designate_start_wx) ? cursor_wx : s->designate_start_wx;
+			int max_y = (min_y == s->designate_start_wy) ? cursor_wy : s->designate_start_wy;
+
+			for (int wy = min_y; wy <= max_y; wy++) {
+				for (int wx = min_x; wx <= max_x; wx++) {
+					struct map_cell c = s->map[wy][wx];
+					if (c.object != OBJ_NONE)
+						queue_task(s, wx, wy);
+				}
+			}
+
+			s->is_dragging = 0;
+		}
+	}
 
 	if (key_code == 'h')
 		(s->mode == MODE_DEFAULT) ? (s->cam_x -= 10) : (s->cursor_lx -= 1);

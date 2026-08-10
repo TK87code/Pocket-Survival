@@ -4,6 +4,7 @@
 #include "ext/pkt_win.h"
 
 static void diversify_terrains(int wx, int wy, char *sym, unsigned int *fc, unsigned int t);
+static int is_in_selection(struct game_state *s, int wx, int wy);
 
 inline void draw_ingame_clock(struct game_state *s)
 {
@@ -53,29 +54,33 @@ inline void draw_terrains(struct game_state *s, int lx, int ly)
 {
 	int wx = s->cam_x + lx;
 	int wy = s->cam_y + ly;
-	unsigned int t = s->map[wy][wx].terrain;
-	char sym = terrain_defs[t].sym;
-	unsigned int fc = terrain_defs[t].fc;
+	struct map_cell c = s->map[wy][wx];
 
-	diversify_terrains(wx, wy, &sym, &fc, t);	
+	char sym = terrain_defs[c.terrain].sym;
+	unsigned int fc = terrain_defs[c.terrain].fc;
+	unsigned int bc = (is_in_selection(s, wx, wy)) ? 11 : terrain_defs[c.terrain].bc;
 
-	pkt_win_putc_color(&s->win_map, lx, ly, (enum pkt_color)fc, terrain_defs[t].bc, PKT_ATTR_NONE, sym);
+	diversify_terrains(wx, wy, &sym, &fc, c.terrain);	
+
+	pkt_win_putc_color(&s->win_map, lx, ly, (enum pkt_color)fc, bc, PKT_ATTR_NONE, sym);
 }
 
 inline void draw_objects(struct game_state *s, int lx, int ly)
 {
 	int wx = s->cam_x + lx;
 	int wy = s->cam_y + ly;
-	unsigned int o = s->map[wy][wx].object;
+	struct map_cell c = s->map[wy][wx];
 
-	if (o != OBJ_NONE) {
-		const struct object_def *od = &object_defs[o];
+	if (c.object != OBJ_NONE) {
+		const struct object_def *od = &object_defs[c.object];
+		unsigned int bc = (is_in_selection(s, wx, wy)) ? 11 : od->bc;
+
 		if (od->sym_str != NULL)  
 			pkt_win_puts_color(&s->win_map, lx, ly, 
-					od->fc, od->bc, od->attr, od->sym_str); 
+					od->fc, bc, od->attr, od->sym_str); 
 		else
 			pkt_win_putc_color(&s->win_map, lx, ly, 
-					od->fc, od->bc, od->attr, od->sym_char); 
+					od->fc, bc, od->attr, od->sym_char); 
 	}
 }
 
@@ -83,10 +88,12 @@ inline void draw_markers(struct game_state *s, int lx, int ly)
 {
 	int wx = s->cam_x + lx;
 	int wy = s->cam_y + ly;
-	struct map_cell *c = &s->map[wy][wx];
-	if (c->bitflags & FLAG_CELL_MARKED) {
-		pkt_win_puts_color(&s->win_map, lx, ly, 1, 16, PKT_ATTR_BOLD, "¤");
-	}
+	struct map_cell c = s->map[wy][wx];
+	if (!(c.bitflags & FLAG_CELL_MARKED))
+		return; 
+
+	unsigned int bc = (is_in_selection(s, wx, wy)) ? 11 : 16;
+	pkt_win_puts_color(&s->win_map, lx, ly, 1, bc, PKT_ATTR_BOLD, "¤");
 }
 
 inline void draw_entities(struct game_state *s)
@@ -94,11 +101,12 @@ inline void draw_entities(struct game_state *s)
 	for (int i = 0; i < s->entity_count; i++) {
 		struct entity *e = &s->entities[i];
 		struct entity_def d = entity_defs[e->type];
+		unsigned int bc = (is_in_selection(s, e->x, e->y)) ? 11 : d.bc;
 
 		int ex = e->x - s->cam_x;
 		int ey = e->y - s->cam_y;
 		if (ex >= 0 && ex < VIEWPORT_COL && ey >= 0 && ey < VIEWPORT_ROW) 
-			pkt_win_putc_color(&s->win_map, ex, ey,	d.fc, d.bc, PKT_ATTR_NONE, d.sym);
+			pkt_win_putc_color(&s->win_map, ex, ey,	d.fc, bc, PKT_ATTR_NONE, d.sym);
 
 		// Slash animation
 		if (e->state == ENT_STATE_WORK) {
@@ -125,12 +133,24 @@ inline void draw_items(struct game_state *s)
 
 		if (lx >= 0 && lx < VIEWPORT_COL && ly >= 0 && ly < VIEWPORT_ROW) {
 			const struct item_def *d = &item_defs[itm->type]; 
+			unsigned int bc = (is_in_selection(s, itm->x, itm->y)) ? 11 : d->bc; 
+
 			if (d->sym_str != NULL)
-				pkt_win_puts_color(&s->win_map, lx, ly, d->fc, d->bc, d->attr, d->sym_str);
+				pkt_win_puts_color(&s->win_map, lx, ly, d->fc, bc, d->attr, d->sym_str);
 			else
-				pkt_win_putc_color(&s->win_map, lx, ly, d->fc, d->bc, d->attr, d->sym_char);
+				pkt_win_putc_color(&s->win_map, lx, ly, d->fc, bc, d->attr, d->sym_char);
 		}
 	}
+}
+
+void draw_cursor(struct game_state *s)
+{
+	int cursor_wx = s->cursor_lx + s->cam_x;
+	int cursor_wy = s->cursor_ly + s->cam_y;
+	unsigned int fc = (is_in_selection(s, cursor_wx, cursor_wy)) ? 16 : PKT_COLOR_WHITE;
+	unsigned int bc = (is_in_selection(s, cursor_wx, cursor_wy)) ? 11 : 16; 
+
+	pkt_win_putc_color(&s->win_map, s->cursor_lx, s->cursor_ly, fc, bc, PKT_ATTR_BOLD, 'X');
 }
 
 static void diversify_terrains(int wx, int wy, char *sym, unsigned int *fc, unsigned int t)
@@ -200,4 +220,25 @@ inline void draw_command_box(struct game_state *s)
 			break;
 	}	
 
+}
+
+static int is_in_selection(struct game_state *s, int wx, int wy)
+{
+	if (s->mode != MODE_DESIGNATE || s->is_dragging == 0)
+		return 0;
+
+	int cursor_wx = s->cursor_lx + s->cam_x;
+	int cursor_wy = s->cursor_ly + s->cam_y;
+	int start_x = s->designate_start_wx;
+	int start_y = s->designate_start_wy;
+	
+	int min_x = (start_x < cursor_wx) ? start_x : cursor_wx;
+	int max_x = (start_x > cursor_wx) ? start_x : cursor_wx;
+	int min_y = (start_y < cursor_wy) ? start_y : cursor_wy;
+	int max_y = (start_y > cursor_wy) ? start_y : cursor_wy;
+
+	if (wx >= min_x && wx <= max_x && wy >= min_y && wy <= max_y)
+		return 1;
+
+	return 0;
 }

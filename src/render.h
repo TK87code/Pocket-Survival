@@ -11,5 +11,6 @@ void draw_entities(struct game_state *s);
 void draw_items(struct game_state *s);
 void draw_command_box(struct game_state *s);
 void draw_speed_indicator(struct game_state *s);
+void draw_cursor(struct game_state *s);
 
 #endif //RENDER_H
