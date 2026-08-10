@@ -1,3 +1,4 @@
 *.sh
 bin
-*.txt
+pocket_log.txt
+document.txt

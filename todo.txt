@@ -1,0 +1,4 @@
+- code cleanup (delete color hard coding)
+- chop down tree etc.
+- better switches on input handler and command window drawer
+- designate area & hauling command
