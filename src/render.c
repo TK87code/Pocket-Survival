@@ -4,11 +4,18 @@
 #include "ext/pkt_win.h"
 
 #define COLOR_SELECTED 11
+#define COMMAND_BC 16
+
+struct cmd_text {
+	const char *text;
+	int lx, ly;
+	enum pkt_color fc;
+};
 
 static void diversify_terrains(int wx, int wy, char *sym, unsigned int *fc, unsigned int t);
 static int is_in_selection(struct game_state *s, int wx, int wy);
 
-inline void draw_ingame_clock(struct game_state *s)
+void draw_ingame_clock(struct game_state *s)
 {
 	int elapsed_mins = s->global_ticks / TICKS_PER_GAME_MINUTE;
 	int abs_mins = elapsed_mins + (9 * 60); // New game starts from Day 1 9am;
@@ -44,7 +51,7 @@ inline void draw_ingame_clock(struct game_state *s)
 			"Day %d - %s %02d:%02d", days, ampm, display_hour, mins);
 }
 
-inline void draw_speed_indicator(struct game_state *s)
+void draw_speed_indicator(struct game_state *s)
 {
 	if (s->time_scale == 0.0f)
 		pkt_win_puts_color(&s->win_log, 2, 0, 16, 6, PKT_ATTR_BOLD, "*PAUSED*");
@@ -52,7 +59,7 @@ inline void draw_speed_indicator(struct game_state *s)
 		pkt_win_printf_color(&s->win_log, 2, 0, 16, 6, PKT_ATTR_BOLD, "SPEED: x%.1f", s->time_scale);	
 }
 
-inline void draw_terrains(struct game_state *s, int lx, int ly)
+void draw_terrains(struct game_state *s, int lx, int ly)
 {
 	int wx = s->cam_x + lx;
 	int wy = s->cam_y + ly;
@@ -67,7 +74,7 @@ inline void draw_terrains(struct game_state *s, int lx, int ly)
 	pkt_win_putc_color(&s->win_map, lx, ly, (enum pkt_color)fc, bc, PKT_ATTR_NONE, sym);
 }
 
-inline void draw_objects(struct game_state *s, int lx, int ly)
+void draw_objects(struct game_state *s, int lx, int ly)
 {
 	int wx = s->cam_x + lx;
 	int wy = s->cam_y + ly;
@@ -86,7 +93,7 @@ inline void draw_objects(struct game_state *s, int lx, int ly)
 	}
 }
 
-inline void draw_markers(struct game_state *s, int lx, int ly)
+void draw_markers(struct game_state *s, int lx, int ly)
 {
 	int wx = s->cam_x + lx;
 	int wy = s->cam_y + ly;
@@ -98,7 +105,7 @@ inline void draw_markers(struct game_state *s, int lx, int ly)
 	pkt_win_puts_color(&s->win_map, lx, ly, 1, bc, PKT_ATTR_BOLD, "¤");
 }
 
-inline void draw_entities(struct game_state *s)
+void draw_entities(struct game_state *s)
 {
 	for (int i = 0; i < s->entity_count; i++) {
 		struct entity *e = &s->entities[i];
@@ -193,35 +200,41 @@ static void diversify_terrains(int wx, int wy, char *sym, unsigned int *fc, unsi
 	}
 }
 
-inline void draw_command_box(struct game_state *s)
+void draw_command_box(struct game_state *s)
 {
 	struct pkt_window *w = &s->win_command;
 	enum pkt_color fc_c = 10; // fcolor for commands
 	enum pkt_color fc_d = PKT_COLOR_WHITE; // fcolor for description
-	enum pkt_color bc = 16; 
 
-	pkt_win_fill(w, bc);
+	pkt_win_fill(w, COMMAND_BC);
 	pkt_win_box(w);
 	pkt_win_puts(w, 2, 0, " COMMANDS ");
 
-	switch (s->mode) {
-		case MODE_DEFAULT:
-			pkt_win_putc_color(w, 2, 1, fc_c, bc, PKT_ATTR_BOLD, 'd');
-			pkt_win_puts_color(w, 3, 1, fc_d, bc, PKT_ATTR_BOLD, ": Designations");
+	struct cmd_text default_cmds [] = {
+		{"d", 2, 1, fc_c}, {": Designations", 3, 1, fc_d},
+		{"SPACE", 2, 37, fc_c}, {": Pause game", 7, 37, fc_d},
+		{"Arrow UP/DOWN", 2, 38, fc_c}, {": Change speed", 15, 38, fc_d},
+	};
 
-			pkt_win_puts_color(w, 2, 37, fc_c, bc, PKT_ATTR_BOLD, "SPACE");
-			pkt_win_puts_color(w, 7, 37, fc_d, bc, PKT_ATTR_BOLD, ": Pause game");
-			pkt_win_puts_color(w, 2, 38, fc_c, bc, PKT_ATTR_BOLD, "Arrow UP/DOWN");
-			pkt_win_puts_color(w, 15, 38,fc_d, bc, PKT_ATTR_BOLD, ": Change speed");
-			break;
-		case MODE_DESIGNATE:
-			pkt_win_puts_color(w, 2, 1, fc_c, bc, PKT_ATTR_BOLD, "Enter");
-			pkt_win_puts_color(w, 7, 1, fc_d, bc, PKT_ATTR_BOLD, ": Designate"); 
-			pkt_win_puts_color(w, 19, 1, fc_c, bc, PKT_ATTR_BOLD, "ESC");
-			pkt_win_puts_color(w, 22, 1,fc_d, bc, PKT_ATTR_BOLD, ": Done"); 
-			break;
-	}	
+	struct cmd_text designate_cmds [] = {
+		{"Enter", 2, 1, fc_c}, {": Designate", 7,1,fc_d},
+		{"ESC", 19, 1, fc_c}, {": Done", 22, 1,fc_d},
+	};
 
+	struct cmd_text *cmd = NULL;
+	int cnt = 0;
+
+	if (s->mode == MODE_DEFAULT) {
+		cmd = default_cmds;
+		cnt = sizeof(default_cmds) / sizeof(default_cmds[0]);
+	} else if (s->mode == MODE_DESIGNATE) {
+		cmd = designate_cmds;
+		cnt = sizeof(designate_cmds) / sizeof(default_cmds[0]);
+	}
+
+	for (int i = 0; i < cnt; i++) 
+		pkt_win_puts_color(w, cmd[i].lx, cmd[i].ly, cmd[i].fc, 
+				(enum pkt_color)COMMAND_BC, PKT_ATTR_BOLD, cmd[i].text); 
 }
 
 static int is_in_selection(struct game_state *s, int wx, int wy)
