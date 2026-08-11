@@ -5,6 +5,7 @@
 
 static int entity_random_walk(struct game_state *s, int idx);
 static int astar_cost_cb(int x, int y, void *user_data);
+static int entity_do_idle_action(struct game_state *s, int idx);
 
 void entity_do_action(struct game_state *s) 
 {
@@ -15,30 +16,13 @@ void entity_do_action(struct game_state *s)
 
 		if (timer <= 0) {
 			switch (e->state) {
-				case ENT_STATE_IDLE: {
-					if (e->type != ENT_COLONIST) {
+				case ENT_STATE_IDLE: 
+					if (e->type != ENT_COLONIST) 
 						timer = entity_random_walk(s, i);
-						break;
-					}
-					int task_found = 0;
-
-					for (int j = 0; j < s->task_count; j++) {
-						struct task *ts = &s->task_queue[j];
-						if (ts->assignee_id == TASK_WAITING) {
-							e->current_task_id = j;
-							e->state = ENT_STATE_MOVE;
-							ts->assignee_id = i;
-							task_found = 1;
-							break;
-						}
-					}
-
-					if(!task_found)
-						timer = entity_random_walk(s, i);
-
+					else
+						timer = entity_do_idle_action(s, i);
 					break;
-			 	} 
-						     
+
 				case ENT_STATE_MOVE: {
 					struct task *ts = &s->task_queue[e->current_task_id];
 
@@ -177,4 +161,27 @@ static int astar_cost_cb(int x, int y, void *user_data)
 	}
 
 	return terrain_defs[c.terrain].move_cost_percent / 100;
+}
+
+static int entity_do_idle_action(struct game_state *s, int idx)
+{
+	int timer = 10;
+	struct entity *e = &s->entities[idx];
+	int task_found = 0;
+
+	for (int j = 0; j < s->task_count; j++) {
+		struct task *ts = &s->task_queue[j];
+		if (ts->assignee_id == TASK_WAITING) {
+			e->current_task_id = j;
+			e->state = ENT_STATE_MOVE;
+			ts->assignee_id = idx;
+			task_found = 1;
+			break;
+		}
+	}
+
+	if(!task_found)
+		timer = entity_random_walk(s, idx);
+
+	return timer;
 }
