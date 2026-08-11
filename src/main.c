@@ -73,6 +73,7 @@ void game_init(void *user_data)
 	s->win_command = pkt_win_create(80, 0, 40, 40);
 	s->cursor_lx = VIEWPORT_COL / 2;
 	s->cursor_ly = VIEWPORT_ROW / 2;
+	s->desig_ctx.target = OBJ_ALL;
 
 	size_t req_mem = astar_get_req_memsize(MAP_COL, MAP_ROW);
 	void *astar_buffer = malloc(req_mem);
@@ -187,6 +188,7 @@ static void handle_input(struct game_state *s, int key_code)
 				case 'd':
 					s->mode = MODE_DESIGNATE;
 					s->time_scale = 0.0f;
+					s->desig_ctx.target = OBJ_ALL;
 					break;
 
 				case 'h': s->cam_x -= 10; break;
@@ -203,29 +205,36 @@ static void handle_input(struct game_state *s, int key_code)
 					s->time_scale = 1.0f;
 					break;
 				case PKT_KEY_ENTER:
-					if (s->is_dragging == 0) {
-						s->is_dragging = 1;
-						s->designate_start_wx = s->cursor_lx + s->cam_x;
-						s->designate_start_wy = s->cursor_ly + s->cam_y;
+					if (s->desig_ctx.is_dragging == 0) {
+						s->desig_ctx.is_dragging = 1;
+						s->desig_ctx.start_wx = s->cursor_lx + s->cam_x;
+						s->desig_ctx.start_wy = s->cursor_ly + s->cam_y;
 					} else {
 						int cursor_wx = s->cursor_lx + s->cam_x;
 						int cursor_wy = s->cursor_ly + s->cam_y;
-						int min_x = (cursor_wx <= s->designate_start_wx) ? cursor_wx : s->designate_start_wx;
-						int min_y = (cursor_wy <= s->designate_start_wy) ? cursor_wy : s->designate_start_wy;
-						int max_x = (min_x == s->designate_start_wx) ? cursor_wx : s->designate_start_wx;
-						int max_y = (min_y == s->designate_start_wy) ? cursor_wy : s->designate_start_wy;
+						int min_x = (cursor_wx <= s->desig_ctx.start_wx) ? cursor_wx : s->desig_ctx.start_wx;
+						int min_y = (cursor_wy <= s->desig_ctx.start_wy) ? cursor_wy : s->desig_ctx.start_wy;
+						int max_x = (min_x == s->desig_ctx.start_wx) ? cursor_wx : s->desig_ctx.start_wx;
+						int max_y = (min_y == s->desig_ctx.start_wy) ? cursor_wy : s->desig_ctx.start_wy;
 
 						for (int wy = min_y; wy <= max_y; wy++) {
 							for (int wx = min_x; wx <= max_x; wx++) {
 								struct map_cell c = s->map[wy][wx];
-								if (c.object != OBJ_NONE)
+								if (s->desig_ctx.target == OBJ_ALL && c.object != OBJ_NONE)
+									queue_task(s, wx, wy);
+								else if (c.object == s->desig_ctx.target)
 									queue_task(s, wx, wy);
 							}
 						}
 
-						s->is_dragging = 0;
+						s->desig_ctx.is_dragging = 0;
 					}
 					break;
+
+				case 't': s->desig_ctx.target = OBJ_TREE; break;
+				case 'r': s->desig_ctx.target = OBJ_ROCK; break;
+				case 'g': s->desig_ctx.target = OBJ_GRASS; break;
+				case 'a': s->desig_ctx.target = OBJ_ALL; break;
 
 				case 'h': s->cursor_lx -= 1; break;
 				case 'l': s->cursor_lx += 1; break;

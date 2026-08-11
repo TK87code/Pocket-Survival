@@ -50,7 +50,8 @@ enum terrain_type {
 };
 
 enum object_type {
-	OBJ_NONE = 0,
+	OBJ_ALL = 0,
+	OBJ_NONE,
 	OBJ_TREE,
 	OBJ_ROCK,
 	OBJ_GRASS,
@@ -182,6 +183,13 @@ struct drop_def { // 2 bytes
 	uint8_t amount;
 };
 
+struct designation_context { // 10 + 2 bytes
+	int start_wx;
+	int start_wy;
+	uint8_t is_dragging;
+	int8_t target; // enum object_type
+};
+
 struct game_state {
 	struct map_cell map[MAP_ROW][MAP_COL];
 	struct item items[MAX_DROPPED_ITEM];
@@ -192,6 +200,7 @@ struct game_state {
 	struct pkt_window win_command;
 	struct pkt_window win_log;
 	struct astar_context *astar_ctx;
+	struct designation_context desig_ctx;
 	
 	uint64_t global_ticks;
 
@@ -207,11 +216,7 @@ struct game_state {
 
 	int cam_x;
 	int cam_y;
-
-	int is_dragging;
-	int designate_start_wx;
-	int designate_start_wy;
-
+	
 	int seed;
 	enum game_mode mode;
 };

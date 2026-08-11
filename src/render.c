@@ -4,12 +4,18 @@
 #include "ext/pkt_win.h"
 
 #define COLOR_SELECTED 11
-#define COMMAND_BC 16
+#define COMMAND_FC1 10 // fc for cmds
+#define COMMAND_FC2 PKT_COLOR_WHITE // fc for cmd descriptions
+#define COMMAND_BC 16 
 
 struct cmd_text {
 	const char *text;
 	int lx, ly;
 	enum pkt_color fc;
+};
+
+struct desig_target {
+	const char *text;
 };
 
 static void diversify_terrains(int wx, int wy, char *sym, unsigned int *fc, unsigned int t);
@@ -203,22 +209,31 @@ static void diversify_terrains(int wx, int wy, char *sym, unsigned int *fc, unsi
 void draw_command_box(struct game_state *s)
 {
 	struct pkt_window *w = &s->win_command;
-	enum pkt_color fc_c = 10; // fcolor for commands
-	enum pkt_color fc_d = PKT_COLOR_WHITE; // fcolor for description
 
 	pkt_win_fill(w, COMMAND_BC);
 	pkt_win_box(w);
 	pkt_win_puts(w, 2, 0, " COMMANDS ");
 
 	struct cmd_text default_cmds [] = {
-		{"d", 2, 1, fc_c}, {": Designations", 3, 1, fc_d},
-		{"SPACE", 2, 37, fc_c}, {": Pause game", 7, 37, fc_d},
-		{"Arrow UP/DOWN", 2, 38, fc_c}, {": Change speed", 15, 38, fc_d},
+		{"d", 2, 1, COMMAND_FC1}, {": Designations", 3, 1, COMMAND_FC2},
+		{"SPACE", 2, 37, COMMAND_FC1}, {": Pause game", 7, 37, COMMAND_FC2},
+		{"Arrow UP/DOWN", 2, 38, COMMAND_FC1}, {": Change speed", 15, 38, COMMAND_FC2},
 	};
 
 	struct cmd_text designate_cmds [] = {
-		{"Enter", 2, 1, fc_c}, {": Designate", 7,1,fc_d},
-		{"ESC", 19, 1, fc_c}, {": Done", 22, 1,fc_d},
+		{"t", 2, 3, COMMAND_FC1}, {": Chop down trees", 3, 3, COMMAND_FC2},
+		{"r", 2, 4, COMMAND_FC1}, {": Mine rocks", 3, 4, COMMAND_FC2},
+		{"g", 2, 5, COMMAND_FC1}, {": Mown grass", 3, 5, COMMAND_FC2},
+		{"a", 2, 6, COMMAND_FC1}, {": Clear the area", 3, 6, COMMAND_FC2},
+		{"Enter", 2, 37, COMMAND_FC1}, {": Designate", 7, 37, COMMAND_FC2},
+		{"ESC", 19, 37, COMMAND_FC1}, {": Done", 22, 37, COMMAND_FC2},
+	};
+
+	struct desig_target dt[] = {
+		[OBJ_ALL] = {"All"},
+		[OBJ_TREE] = {"Tree"},
+		[OBJ_ROCK] = {"Rock"},
+		[OBJ_GRASS] = {"Grass"},
 	};
 
 	struct cmd_text *cmd = NULL;
@@ -228,6 +243,7 @@ void draw_command_box(struct game_state *s)
 		cmd = default_cmds;
 		cnt = sizeof(default_cmds) / sizeof(default_cmds[0]);
 	} else if (s->mode == MODE_DESIGNATE) {
+		pkt_win_printf_color(w, 2, 1, COMMAND_FC2, COMMAND_BC, PKT_ATTR_BOLD, "TARGET-> [%s]", dt[s->desig_ctx.target]); 
 		cmd = designate_cmds;
 		cnt = sizeof(designate_cmds) / sizeof(default_cmds[0]);
 	}
@@ -239,13 +255,13 @@ void draw_command_box(struct game_state *s)
 
 static int is_in_selection(struct game_state *s, int wx, int wy)
 {
-	if (s->mode != MODE_DESIGNATE || s->is_dragging == 0)
+	if (s->mode != MODE_DESIGNATE || s->desig_ctx.is_dragging == 0)
 		return 0;
 
 	int cursor_wx = s->cursor_lx + s->cam_x;
 	int cursor_wy = s->cursor_ly + s->cam_y;
-	int start_x = s->designate_start_wx;
-	int start_y = s->designate_start_wy;
+	int start_x = s->desig_ctx.start_wx;
+	int start_y = s->desig_ctx.start_wy;
 	
 	int min_x = (start_x < cursor_wx) ? start_x : cursor_wx;
 	int max_x = (start_x > cursor_wx) ? start_x : cursor_wx;

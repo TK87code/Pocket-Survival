@@ -17,9 +17,10 @@ struct entity_def entity_defs[] = {
 };
 
 struct object_def object_defs[] = {
+	[OBJ_ALL] =	{0},
 	[OBJ_NONE] = 	{0},
-	[OBJ_TREE] =	{"♣", 0, 22, 16, PKT_ATTR_BOLD, FLAG_OBJ_WALKABLE, TASK_CHOP_TREE}, 
-	[OBJ_ROCK] =	{NULL, 'O', 236, 16, PKT_ATTR_BOLD, 0x00, TASK_MINE_ROCK},
+	[OBJ_TREE] =	{NULL, 'Y', 94, 16, PKT_ATTR_BOLD, FLAG_OBJ_WALKABLE, TASK_CHOP_TREE}, 
+	[OBJ_ROCK] =	{NULL, 'O', 58, 16, PKT_ATTR_BOLD, 0x00, TASK_MINE_ROCK},
 	[OBJ_GRASS] =	{NULL, '"', 76, 16, PKT_ATTR_NONE, FLAG_OBJ_WALKABLE, TASK_MOW_GRASS}, 
 };
 
