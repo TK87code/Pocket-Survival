@@ -3,6 +3,8 @@
 #include "data.h"
 #include "ext/pkt_win.h"
 
+#define COLOR_SELECTED 11
+
 static void diversify_terrains(int wx, int wy, char *sym, unsigned int *fc, unsigned int t);
 static int is_in_selection(struct game_state *s, int wx, int wy);
 
@@ -58,7 +60,7 @@ inline void draw_terrains(struct game_state *s, int lx, int ly)
 
 	char sym = terrain_defs[c.terrain].sym;
 	unsigned int fc = terrain_defs[c.terrain].fc;
-	unsigned int bc = (is_in_selection(s, wx, wy)) ? 11 : terrain_defs[c.terrain].bc;
+	unsigned int bc = (is_in_selection(s, wx, wy)) ? COLOR_SELECTED : terrain_defs[c.terrain].bc;
 
 	diversify_terrains(wx, wy, &sym, &fc, c.terrain);	
 
@@ -73,7 +75,7 @@ inline void draw_objects(struct game_state *s, int lx, int ly)
 
 	if (c.object != OBJ_NONE) {
 		const struct object_def *od = &object_defs[c.object];
-		unsigned int bc = (is_in_selection(s, wx, wy)) ? 11 : od->bc;
+		unsigned int bc = (is_in_selection(s, wx, wy)) ? COLOR_SELECTED : od->bc;
 
 		if (od->sym_str != NULL)  
 			pkt_win_puts_color(&s->win_map, lx, ly, 
@@ -92,7 +94,7 @@ inline void draw_markers(struct game_state *s, int lx, int ly)
 	if (!(c.bitflags & FLAG_CELL_MARKED))
 		return; 
 
-	unsigned int bc = (is_in_selection(s, wx, wy)) ? 11 : 16;
+	unsigned int bc = (is_in_selection(s, wx, wy)) ? COLOR_SELECTED : 16;
 	pkt_win_puts_color(&s->win_map, lx, ly, 1, bc, PKT_ATTR_BOLD, "¤");
 }
 
@@ -101,10 +103,10 @@ inline void draw_entities(struct game_state *s)
 	for (int i = 0; i < s->entity_count; i++) {
 		struct entity *e = &s->entities[i];
 		struct entity_def d = entity_defs[e->type];
-		unsigned int bc = (is_in_selection(s, e->x, e->y)) ? 11 : d.bc;
+		unsigned int bc = (is_in_selection(s, e->wx, e->wy)) ? COLOR_SELECTED : d.bc;
 
-		int ex = e->x - s->cam_x;
-		int ey = e->y - s->cam_y;
+		int ex = e->wx - s->cam_x;
+		int ey = e->wy - s->cam_y;
 		if (ex >= 0 && ex < VIEWPORT_COL && ey >= 0 && ey < VIEWPORT_ROW) 
 			pkt_win_putc_color(&s->win_map, ex, ey,	d.fc, bc, PKT_ATTR_NONE, d.sym);
 
@@ -133,7 +135,7 @@ inline void draw_items(struct game_state *s)
 
 		if (lx >= 0 && lx < VIEWPORT_COL && ly >= 0 && ly < VIEWPORT_ROW) {
 			const struct item_def *d = &item_defs[itm->type]; 
-			unsigned int bc = (is_in_selection(s, itm->x, itm->y)) ? 11 : d->bc; 
+			unsigned int bc = (is_in_selection(s, itm->x, itm->y)) ? COLOR_SELECTED : d->bc; 
 
 			if (d->sym_str != NULL)
 				pkt_win_puts_color(&s->win_map, lx, ly, d->fc, bc, d->attr, d->sym_str);
@@ -148,7 +150,7 @@ void draw_cursor(struct game_state *s)
 	int cursor_wx = s->cursor_lx + s->cam_x;
 	int cursor_wy = s->cursor_ly + s->cam_y;
 	unsigned int fc = (is_in_selection(s, cursor_wx, cursor_wy)) ? 16 : PKT_COLOR_WHITE;
-	unsigned int bc = (is_in_selection(s, cursor_wx, cursor_wy)) ? 11 : 16; 
+	unsigned int bc = (is_in_selection(s, cursor_wx, cursor_wy)) ? COLOR_SELECTED : 16; 
 
 	pkt_win_putc_color(&s->win_map, s->cursor_lx, s->cursor_ly, fc, bc, PKT_ATTR_BOLD, 'X');
 }

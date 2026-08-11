@@ -11,9 +11,15 @@
 
 #define ASTAR_OPTIMIZE_16BIT
 
+enum scenes {
+	SCENE_TITLE,
+	SCENE_PLAY,
+};
+
 void game_init(void *user_data);
 void game_update(void *user_data, float dt);
 void game_draw(void *user_data);
+static void spone_entity(struct game_state *s, int type, int wx, int wy, unsigned int flag);
 static void queue_task(struct game_state *s, int wx, int wy);
 static inline void handle_input(struct game_state *s, int key_code);
 
@@ -35,6 +41,7 @@ int main(int argc, char *argv[])
 	config.game_rows = PANEL_ROW;
 
 	if (pkt_init(&config) < 0) {
+		PKT_LOG(PKT_LOG_ERROR, "Failed to initialize Pocket game engine.");
 		return -1;
 	}
 
@@ -43,13 +50,15 @@ int main(int argc, char *argv[])
 	scene.on_draw = game_draw;
 	scene.user_data = state;
 
-	pkt_register_scene(0, &scene);
-	pkt_swap_scene(0);
+	pkt_register_scene(SCENE_PLAY, &scene);
+	pkt_swap_scene(SCENE_PLAY);
 
 	pkt_ignite();
 	pkt_cleanup();
 
 	free(state->astar_ctx);
+	free(state);
+
 	return 0;
 }
 
@@ -57,7 +66,6 @@ void game_init(void *user_data)
 {
 	struct game_state *s = (struct game_state *)user_data;
 
-	s->tick_accumulator = 0.0f;
 	s->time_scale = 1.0f;
 
 	s->win_log = pkt_win_create(0, 0, 80, 1);
@@ -71,32 +79,9 @@ void game_init(void *user_data)
 
 	generate_map(s);	
 
-	s->entity_count = 2;
-
-	s->entities[0] = (struct entity){
-		.type = ENT_COLONIST,
-		.x = 40,
-		.y = 12,
-		.state = ENT_STATE_IDLE,
-		.current_task_id = -1,
-		.wait_timer = FPS,
-		.carrying_item = ITEM_NONE,
-		.carrying_item_amount = 0,
-		.bitflags = FLAG_ENTITY_FRIENDLY,
-	};
-
-	s->entities[1] = (struct entity){
-		.type = ENT_DOG,
-		.x = 41,
-		.y = 12,
-		.state = ENT_STATE_IDLE,
-		.current_task_id = -1,
-		.wait_timer = FPS,
-		.carrying_item = ITEM_NONE,
-		.carrying_item_amount = 0,
-		.bitflags = FLAG_ENTITY_FRIENDLY,
-	};
-
+	spone_entity(s, ENT_COLONIST, 40, 12, FLAG_ENTITY_FRIENDLY);
+	spone_entity(s, ENT_DOG, 41,12, FLAG_ENTITY_FRIENDLY);
+	
 	s->cursor_lx = VIEWPORT_COL / 2;
 	s->cursor_ly = VIEWPORT_ROW / 2;
 }
@@ -240,4 +225,24 @@ static inline void handle_input(struct game_state *s, int key_code)
 		(s->mode == MODE_DEFAULT) ? (s->cam_y -= 10) : (s->cursor_ly -= 1);
 	if (key_code == 'j')
 		(s->mode == MODE_DEFAULT) ? (s->cam_y += 10) : (s->cursor_ly += 1);
+}
+
+static void spone_entity(struct game_state *s, int type, int wx, int wy, unsigned int flag)
+{
+	if (s->entity_count >= MAX_ENTITY)
+		return;
+
+	s->entities[s->entity_count] = (struct entity){
+		.type = type,
+		.wx = wx,
+		.wy = wy,
+		.state = ENT_STATE_IDLE,
+		.current_task_id = -1,
+		.wait_timer = 0,
+		.carrying_item = ITEM_NONE,
+		.carrying_item_amount = 0,
+		.bitflags = flag,
+	};
+
+	s->entity_count++;
 }

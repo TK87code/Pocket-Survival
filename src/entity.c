@@ -42,7 +42,7 @@ void entity_do_action(struct game_state *s)
 				case ENT_STATE_MOVE: {
 					struct task *ts = &s->task_queue[e->current_task_id];
 
-					int dist_to_target = abs(e->x - ts->target_x) + abs(e->y - ts->target_y);
+					int dist_to_target = abs(e->wx - ts->target_x) + abs(e->wy - ts->target_y);
 					if (dist_to_target <= 1) {
 						e->state = ENT_STATE_WORK;
 						timer = task_defs[ts->type].required_ticks;
@@ -55,7 +55,7 @@ void entity_do_action(struct game_state *s)
 							.out_path = e->path,
 							.user_data = s,
 							.cost_cb = astar_cost_cb,
-							.start = {e->x, e->y},
+							.start = {e->wx, e->wy},
 							.end = {ts->target_x, ts->target_y},
 							.max_path_len = 128,
 						};
@@ -81,8 +81,8 @@ void entity_do_action(struct game_state *s)
 						} else {
 							struct map_cell nc = s->map[ny][nx];
 
-							e->x = nx;
-							e->y = ny;
+							e->wx = nx;
+							e->wy = ny;
 							timer = (entity_defs[e->type].base_move_ticks * 
 									terrain_defs[nc.terrain].move_cost_percent) / 100;
 							e->path_index++;
@@ -90,7 +90,7 @@ void entity_do_action(struct game_state *s)
 					}
 
 					if (e->path_index >= e->path_len) {
-						if (abs(e->x - ts->target_x) + abs(e->y - ts->target_y) <= 1) {
+						if (abs(e->wx - ts->target_x) + abs(e->wy - ts->target_y) <= 1) {
 							e->state = ENT_STATE_WORK;
 							timer = task_defs[ts->type].required_ticks;
 						} else {
@@ -142,19 +142,19 @@ static int entity_random_walk(struct game_state *s, int idx)
 
 	int dx = rand() % 3 - 1; // -1 ~ 1
 	int dy = rand() % 3 - 1;
-	int nx = e->x;
-	int ny = e->y;
+	int nx = e->wx;
+	int ny = e->wy;
 
-	if (e->x + dx >= 0 && e->x + dx < MAP_COL)
-		nx = e->x + dx;
-	if (e->y + dy >= 0 && e->y + dy < MAP_ROW)
-		ny = e->y + dy;
+	if (e->wx + dx >= 0 && e->wx + dx < MAP_COL)
+		nx = e->wx + dx;
+	if (e->wy + dy >= 0 && e->wy + dy < MAP_ROW)
+		ny = e->wy + dy;
 
 	struct map_cell nc = s->map[ny][nx];
 
 	if (nc.bitflags & FLAG_CELL_WALKABLE) {
-		e->x = nx; 
-		e->y = ny;
+		e->wx = nx; 
+		e->wy = ny;
 
 		return 2 * ((entity_defs[e->type].base_move_ticks *
 				terrain_defs[nc.terrain].move_cost_percent) / 100);

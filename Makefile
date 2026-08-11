@@ -7,7 +7,7 @@ ENGINE_SRC = $(wildcard vendor/pocket/src/engine/*.c)
 
 EXT_SRC = $(wildcard vendor/pocket/src/ext/*.c)
 
-TARGET = bin/pocket_island
+TARGET = bin/pocket_survival
 
 all: $(TARGET)
 

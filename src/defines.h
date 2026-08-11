@@ -100,14 +100,15 @@ struct map_cell { // 3 + 1 bytes
 	uint8_t bitflags;	// Bitflags to store terrain state (e.g., roofed or burning)
 };
 
+#define MAX_ENTITY 256
 #define FLAG_ENTITY_FRIENDLY (1 << 0)
 
 struct entity { // 30 + 2 bytes 
 	struct astar_pos path[128];
 	int path_len;
 	int path_index;
-	int16_t x;
-	int16_t y;
+	int16_t wx;
+	int16_t wy;
 	int16_t wait_timer;
 	uint16_t carrying_item_amount;
 	int16_t current_task_id;	// current task id
@@ -185,7 +186,7 @@ struct game_state {
 	struct map_cell map[MAP_ROW][MAP_COL];
 	struct item items[MAX_DROPPED_ITEM];
 	struct task task_queue[MAX_TASK];
-	struct entity entities[16];
+	struct entity entities[MAX_ENTITY];
 	struct pkt_window win_map;
 	struct pkt_window win_status;
 	struct pkt_window win_command;
