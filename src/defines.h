@@ -136,12 +136,15 @@ struct task { // 6 + 2 bytes
 
 #define MAX_PILE_AREA 128
 
+#define FLAG_PILE_WOOD_ACCEPTED (1 << 0)
+#define FLAG_PILE_STONE_ACCEPTED (1 << 1)
+
 struct pile_area { // 9 + 1 bytes
 	int16_t min_wx;
 	int16_t min_wy;
 	int16_t max_wx;
 	int16_t max_wy;
-	uint8_t item; // enum item type
+	uint8_t bitflags; 
 };
 
 struct terrain_def { // 6 + 2 bytes
@@ -191,11 +194,11 @@ struct drop_def { // 2 bytes
 	uint8_t amount;
 };
 
-struct dragging_context { // 6 + 2 bytes
+struct dragging_context { // 13 + 1 bytes
 	int16_t start_wx;
 	int16_t start_wy;
 	uint8_t is_dragging;
-	uint8_t type; // enum object_type or enum item_type
+	void *target_data;
 };
 
 struct game_state {

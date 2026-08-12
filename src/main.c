@@ -301,6 +301,11 @@ static void drag_end(struct game_state *s)
 					queue_task(s, wx, wy);
 			} else if (s->mode == MODE_PILE) {
 				c->bitflags |= FLAG_CELL_PILE_AREA;
+				struct pile_area *pe = s->pile_areas[pile_area_count];
+				pe->min_wx = min_wx;
+				pe->min_wy = min_wy;
+				pe->max_wx = max_wx;
+				pe->max_wy = max_wy;
 			}
 		}
 	}

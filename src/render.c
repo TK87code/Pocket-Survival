@@ -111,8 +111,7 @@ void draw_overlays(struct game_state *s, int lx, int ly)
 	}
 
 	if (c.bitflags & FLAG_CELL_PILE_AREA) {
-		PKT_LOG(PKT_LOG_INFO, "herehere");
-		pkt_win_puts_color(&s->win_map, lx, ly, 1, bc, PKT_ATTR_BOLD, "▒");	
+		pkt_win_puts_color(&s->win_map, lx, ly, 102, bc, PKT_ATTR_BOLD, "░");	
 	}
 }
 
