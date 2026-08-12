@@ -23,20 +23,17 @@
 
 #define SEC2TICK(seconds) ((uint16_t)((seconds) * TARGET_TICK_PER_SEC))
 
-#define MAP_COL 250 
-#define MAP_ROW 250 
-#define PANEL_COL 120
-#define PANEL_ROW 40
-#define VIEWPORT_COL 76
-#define VIEWPORT_ROW 38
+#define MAP_COLS 250 
+#define MAP_ROWS 250 
+#define PANEL_COLS 120
+#define PANEL_ROWS 40
+#define VIEWPORT_COLS 76
+#define VIEWPORT_ROWS 38
 
-// Entity state flags
-
-#define TEST_SEED 311
-
-enum game_mode {
+enum command_mode {
 	MODE_DEFAULT = 0,
 	MODE_DESIGNATE,
+	MODE_PILE,
 };
 
 enum terrain_type {
@@ -60,7 +57,8 @@ enum object_type {
 #define MAX_DROPPED_ITEM 1024
 
 enum item_type {
-	ITEM_NONE = 0,
+	ITEM_ALL = 0,
+	ITEM_NONE,
 	ITEM_WOOD,
 	ITEM_STONE,
 };
@@ -92,13 +90,13 @@ enum task_type {
 
 #define FLAG_CELL_WALKABLE (1 << 0)
 #define FLAG_CELL_HAS_ITEM (1 << 1)
-#define FLAG_CELL_BLUE_PRINT (1 << 2)
+#define FLAG_CELL_PILE_AREA (1 << 2)
 #define FLAG_CELL_MARKED (1 << 3)
 
 struct map_cell { // 3 + 1 bytes
-	uint8_t object;		// Store enum object_type
-	uint8_t terrain;	// store enum terrain_type
-	uint8_t bitflags;	// Bitflags to store terrain state (e.g., roofed or burning)
+	uint8_t object;		// enum object_type
+	uint8_t terrain;	// enum terrain_type
+	uint8_t bitflags;	
 };
 
 #define MAX_ENTITY 256
@@ -134,6 +132,16 @@ struct task { // 6 + 2 bytes
 	int16_t target_y;
 	uint8_t type;		 //enum task_type
 	int8_t assignee_id;
+};
+
+#define MAX_PILE_AREA 128
+
+struct pile_area { // 9 + 1 bytes
+	int16_t min_wx;
+	int16_t min_wy;
+	int16_t max_wx;
+	int16_t max_wy;
+	uint8_t item; // enum item type
 };
 
 struct terrain_def { // 6 + 2 bytes
@@ -183,24 +191,25 @@ struct drop_def { // 2 bytes
 	uint8_t amount;
 };
 
-struct designation_context { // 10 + 2 bytes
-	int start_wx;
-	int start_wy;
+struct dragging_context { // 6 + 2 bytes
+	int16_t start_wx;
+	int16_t start_wy;
 	uint8_t is_dragging;
-	int8_t target; // enum object_type
+	uint8_t type; // enum object_type or enum item_type
 };
 
 struct game_state {
-	struct map_cell map[MAP_ROW][MAP_COL];
+	struct map_cell map[MAP_ROWS][MAP_COLS];
 	struct item items[MAX_DROPPED_ITEM];
 	struct task task_queue[MAX_TASK];
 	struct entity entities[MAX_ENTITY];
+	struct pile_area pile_areas[MAX_PILE_AREA];
 	struct pkt_window win_map;
 	struct pkt_window win_status;
 	struct pkt_window win_command;
 	struct pkt_window win_log;
 	struct astar_context *astar_ctx;
-	struct designation_context desig_ctx;
+	struct dragging_context drag_ctx;
 	
 	uint64_t global_ticks;
 
@@ -210,6 +219,7 @@ struct game_state {
 	int entity_count;
 	int task_count;
 	int dropped_item_count;
+	int pile_area_count;
 
 	int cursor_lx;
 	int cursor_ly;
@@ -218,7 +228,7 @@ struct game_state {
 	int cam_y;
 	
 	int seed;
-	enum game_mode mode;
+	enum command_mode mode;
 };
 
 #endif // DEFINES_H

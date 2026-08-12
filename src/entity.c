@@ -129,9 +129,9 @@ static int entity_random_walk(struct game_state *s, int idx)
 	int nx = e->wx;
 	int ny = e->wy;
 
-	if (e->wx + dx >= 0 && e->wx + dx < MAP_COL)
+	if (e->wx + dx >= 0 && e->wx + dx < MAP_COLS)
 		nx = e->wx + dx;
-	if (e->wy + dy >= 0 && e->wy + dy < MAP_ROW)
+	if (e->wy + dy >= 0 && e->wy + dy < MAP_ROWS)
 		ny = e->wy + dy;
 
 	struct map_cell nc = s->map[ny][nx];
@@ -151,7 +151,7 @@ static int astar_cost_cb(int x, int y, void *user_data)
 {
 	struct game_state *s = (struct game_state *)user_data;
 
-	if (x < 0 || x >= MAP_COL || y < 0 || y >= MAP_ROW)
+	if (x < 0 || x >= MAP_COLS || y < 0 || y >= MAP_ROWS)
 		return -1;
 
 	struct map_cell c = s->map[y][x];

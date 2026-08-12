@@ -22,6 +22,9 @@ void game_draw(void *user_data);
 static void spone_entity(struct game_state *s, int type, int wx, int wy, unsigned int flag);
 static void queue_task(struct game_state *s, int wx, int wy);
 static inline void handle_input(struct game_state *s, int key_code);
+static void drag_start(struct game_state *s);
+static void drag_end(struct game_state *s);
+static void return_to_mode_default(struct game_state *s);
 
 int main(int argc, char *argv[]) 
 {
@@ -37,8 +40,8 @@ int main(int argc, char *argv[])
 	config.target_fps = FPS;
 	config.default_fcolor = 16;
 	config.default_bcolor = 237;
-	config.game_cols = PANEL_COL;
-	config.game_rows = PANEL_ROW;
+	config.game_cols = PANEL_COLS;
+	config.game_rows = PANEL_ROWS;
 
 	if (pkt_init(&config) < 0) {
 		PKT_LOG(PKT_LOG_ERROR, "Failed to initialize Pocket game engine.");
@@ -68,16 +71,15 @@ void game_init(void *user_data)
 
 	s->time_scale = 1.0f;
 	s->win_log = pkt_win_create(0, 0, 80, 1);
-	s->win_map = pkt_win_create(2, 1, VIEWPORT_COL, VIEWPORT_ROW);
+	s->win_map = pkt_win_create(2, 1, VIEWPORT_COLS, VIEWPORT_ROWS);
 	s->win_status = pkt_win_create(0, 39, 80, 1);
 	s->win_command = pkt_win_create(80, 0, 40, 40);
-	s->cursor_lx = VIEWPORT_COL / 2;
-	s->cursor_ly = VIEWPORT_ROW / 2;
-	s->desig_ctx.target = OBJ_ALL;
+	s->cursor_lx = VIEWPORT_COLS / 2;
+	s->cursor_ly = VIEWPORT_ROWS / 2;
 
-	size_t req_mem = astar_get_req_memsize(MAP_COL, MAP_ROW);
+	size_t req_mem = astar_get_req_memsize(MAP_COLS, MAP_ROWS);
 	void *astar_buffer = malloc(req_mem);
-	s->astar_ctx = astar_init(MAP_COL, MAP_ROW, astar_buffer);
+	s->astar_ctx = astar_init(MAP_COLS, MAP_ROWS, astar_buffer);
 
 	generate_map(s);	
 
@@ -97,21 +99,21 @@ void game_update(void *user_data, float dt)
 
 	if (s->cursor_lx < 0)
 		s->cursor_lx = 0;
-	if (s->cursor_lx > VIEWPORT_COL - 1)
-		s->cursor_lx = VIEWPORT_COL - 1;
+	if (s->cursor_lx > VIEWPORT_COLS - 1)
+		s->cursor_lx = VIEWPORT_COLS - 1;
 	if (s->cursor_ly < 0)
 		s->cursor_ly = 0;
-	if (s->cursor_ly > VIEWPORT_ROW - 1)
-		s->cursor_ly = VIEWPORT_ROW - 1;
+	if (s->cursor_ly > VIEWPORT_ROWS - 1)
+		s->cursor_ly = VIEWPORT_ROWS - 1;
 
 	if (s->cam_x < 0)
 		s->cam_x = 0;
 	if (s->cam_y < 0)
 		s->cam_y = 0;
-	if (s->cam_x > MAP_COL - VIEWPORT_COL)
-		s->cam_x = MAP_COL - VIEWPORT_COL;
-	if (s->cam_y > MAP_ROW - VIEWPORT_ROW)
-		s->cam_y = MAP_ROW - VIEWPORT_ROW;
+	if (s->cam_x > MAP_COLS - VIEWPORT_COLS)
+		s->cam_x = MAP_COLS - VIEWPORT_COLS;
+	if (s->cam_y > MAP_ROWS - VIEWPORT_ROWS)
+		s->cam_y = MAP_ROWS - VIEWPORT_ROWS;
 
 	s->tick_accumulator += dt * s->time_scale;
 
@@ -130,17 +132,17 @@ void game_draw(void *user_data)
 	draw_ingame_clock(s);
 	draw_speed_indicator(s);
 
-	for (int ly = 0; ly < VIEWPORT_ROW; ly++) {
-		for (int lx = 0; lx < VIEWPORT_COL; lx++) {
+	for (int ly = 0; ly < VIEWPORT_ROWS; ly++) {
+		for (int lx = 0; lx < VIEWPORT_COLS; lx++) {
 			draw_terrains(s, lx, ly);
 			draw_objects(s, lx, ly);
-			draw_markers(s, lx, ly);
+			draw_overlays(s, lx, ly);
 		}
 	}
 	draw_items(s);
 	draw_entities(s);
 
-	if (s->mode == MODE_DESIGNATE)
+	if (s->mode == MODE_DESIGNATE || s->mode == MODE_PILE)
 		draw_cursor(s);
 }
 
@@ -188,7 +190,13 @@ static void handle_input(struct game_state *s, int key_code)
 				case 'd':
 					s->mode = MODE_DESIGNATE;
 					s->time_scale = 0.0f;
-					s->desig_ctx.target = OBJ_ALL;
+					s->drag_ctx.type = OBJ_ALL;
+					break;
+
+				case 'p':
+					s->mode = MODE_PILE;
+					s->time_scale = 0.0f;
+					s->drag_ctx.type = ITEM_ALL;
 					break;
 
 				case 'h': s->cam_x -= 10; break;
@@ -201,40 +209,42 @@ static void handle_input(struct game_state *s, int key_code)
 		case MODE_DESIGNATE:
 			switch (key_code) {
 				case PKT_KEY_ESCAPE:
-					s->mode = MODE_DEFAULT;
-					s->time_scale = 1.0f;
+					return_to_mode_default(s);
 					break;
 				case PKT_KEY_ENTER:
-					if (s->desig_ctx.is_dragging == 0) {
-						s->desig_ctx.is_dragging = 1;
-						s->desig_ctx.start_wx = s->cursor_lx + s->cam_x;
-						s->desig_ctx.start_wy = s->cursor_ly + s->cam_y;
-					} else {
-						int cursor_wx = s->cursor_lx + s->cam_x;
-						int cursor_wy = s->cursor_ly + s->cam_y;
-						int min_x = (cursor_wx <= s->desig_ctx.start_wx) ? cursor_wx : s->desig_ctx.start_wx;
-						int min_y = (cursor_wy <= s->desig_ctx.start_wy) ? cursor_wy : s->desig_ctx.start_wy;
-						int max_x = (min_x == s->desig_ctx.start_wx) ? cursor_wx : s->desig_ctx.start_wx;
-						int max_y = (min_y == s->desig_ctx.start_wy) ? cursor_wy : s->desig_ctx.start_wy;
-
-						for (int wy = min_y; wy <= max_y; wy++) {
-							for (int wx = min_x; wx <= max_x; wx++) {
-								struct map_cell c = s->map[wy][wx];
-								if (s->desig_ctx.target == OBJ_ALL && c.object != OBJ_NONE)
-									queue_task(s, wx, wy);
-								else if (c.object == s->desig_ctx.target)
-									queue_task(s, wx, wy);
-							}
-						}
-
-						s->desig_ctx.is_dragging = 0;
-					}
+					if (s->drag_ctx.is_dragging == 0)  
+						drag_start(s);
+					else 
+						drag_end(s);
 					break;
 
-				case 't': s->desig_ctx.target = OBJ_TREE; break;
-				case 'r': s->desig_ctx.target = OBJ_ROCK; break;
-				case 'g': s->desig_ctx.target = OBJ_GRASS; break;
-				case 'a': s->desig_ctx.target = OBJ_ALL; break;
+				case 't': s->drag_ctx.type = OBJ_TREE; break;
+				case 'r': s->drag_ctx.type = OBJ_ROCK; break;
+				case 'g': s->drag_ctx.type = OBJ_GRASS; break;
+				case 'a': s->drag_ctx.type = OBJ_ALL; break;
+
+				case 'h': s->cursor_lx -= 1; break;
+				case 'l': s->cursor_lx += 1; break;
+				case 'j': s->cursor_ly += 1; break;
+				case 'k': s->cursor_ly -= 1; break;
+			}
+			break;
+
+		case MODE_PILE: 
+			switch (key_code) {
+				case PKT_KEY_ESCAPE:
+					return_to_mode_default(s);
+					break;
+
+				case PKT_KEY_ENTER:
+					if (s->drag_ctx.is_dragging == 0) 
+						drag_start(s);
+					else 
+						drag_end(s);
+					break;
+
+				case 'w': s->drag_ctx.type = ITEM_WOOD; break;
+				case 's': s->drag_ctx.type = ITEM_STONE; break;		
 
 				case 'h': s->cursor_lx -= 1; break;
 				case 'l': s->cursor_lx += 1; break;
@@ -263,4 +273,44 @@ static void spone_entity(struct game_state *s, int type, int wx, int wy, unsigne
 	};
 
 	s->entity_count++;
+}
+
+static void drag_start(struct game_state *s)
+{
+	s->drag_ctx.is_dragging = 1;
+	s->drag_ctx.start_wx = s->cursor_lx + s->cam_x;
+	s->drag_ctx.start_wy = s->cursor_ly + s->cam_y;
+}
+
+static void drag_end(struct game_state *s)  
+{
+	int cursor_wx = s->cursor_lx + s->cam_x;
+	int cursor_wy = s->cursor_ly + s->cam_y;
+	int min_x = (cursor_wx <= s->drag_ctx.start_wx) ? cursor_wx : s->drag_ctx.start_wx;
+	int min_y = (cursor_wy <= s->drag_ctx.start_wy) ? cursor_wy : s->drag_ctx.start_wy;
+	int max_x = (min_x == s->drag_ctx.start_wx) ? cursor_wx : s->drag_ctx.start_wx;
+	int max_y = (min_y == s->drag_ctx.start_wy) ? cursor_wy : s->drag_ctx.start_wy;
+
+	for (int wy = min_y; wy <= max_y; wy++) {
+		for (int wx = min_x; wx <= max_x; wx++) {
+			struct map_cell *c = &s->map[wy][wx];
+			if (s->mode == MODE_DESIGNATE){
+				if (s->drag_ctx.type == OBJ_ALL && c->object != OBJ_NONE)
+					queue_task(s, wx, wy);
+				else if (c->object == s->drag_ctx.type)
+					queue_task(s, wx, wy);
+			} else if (s->mode == MODE_PILE) {
+				c->bitflags |= FLAG_CELL_PILE_AREA;
+			}
+		}
+	}
+	s->drag_ctx.is_dragging = 0;
+}
+
+static void return_to_mode_default(struct game_state *s)
+{
+	s->mode = MODE_DEFAULT;
+	s->time_scale = 1.0f;
+	s->cursor_lx = VIEWPORT_COLS / 2;
+	s->cursor_ly = VIEWPORT_ROWS / 2;
 }

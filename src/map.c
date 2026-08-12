@@ -5,8 +5,8 @@
 
 void generate_map(struct game_state *s)
 {
-	for (int y = 0; y < MAP_ROW; y++) {
-		for (int x = 0; x < MAP_COL; x++) {
+	for (int y = 0; y < MAP_ROWS; y++) {
+		for (int x = 0; x < MAP_COLS; x++) {
 			unsigned int o = OBJ_NONE;
 
 			float e_base = value_noise_2d(x, y, s->seed, 200.f) * 0.8f;

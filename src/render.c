@@ -99,16 +99,21 @@ void draw_objects(struct game_state *s, int lx, int ly)
 	}
 }
 
-void draw_markers(struct game_state *s, int lx, int ly)
+void draw_overlays(struct game_state *s, int lx, int ly)
 {
 	int wx = s->cam_x + lx;
 	int wy = s->cam_y + ly;
 	struct map_cell c = s->map[wy][wx];
-	if (!(c.bitflags & FLAG_CELL_MARKED))
-		return; 
-
 	unsigned int bc = (is_in_selection(s, wx, wy)) ? COLOR_SELECTED : 16;
-	pkt_win_puts_color(&s->win_map, lx, ly, 1, bc, PKT_ATTR_BOLD, "¤");
+
+	if (c.bitflags & FLAG_CELL_MARKED) {
+		pkt_win_puts_color(&s->win_map, lx, ly, 1, bc, PKT_ATTR_BOLD, "¤");
+	}
+
+	if (c.bitflags & FLAG_CELL_PILE_AREA) {
+		PKT_LOG(PKT_LOG_INFO, "herehere");
+		pkt_win_puts_color(&s->win_map, lx, ly, 1, bc, PKT_ATTR_BOLD, "▒");	
+	}
 }
 
 void draw_entities(struct game_state *s)
@@ -120,7 +125,7 @@ void draw_entities(struct game_state *s)
 
 		int ex = e->wx - s->cam_x;
 		int ey = e->wy - s->cam_y;
-		if (ex >= 0 && ex < VIEWPORT_COL && ey >= 0 && ey < VIEWPORT_ROW) 
+		if (ex >= 0 && ex < VIEWPORT_COLS && ey >= 0 && ey < VIEWPORT_ROWS) 
 			pkt_win_putc_color(&s->win_map, ex, ey,	d.fc, bc, PKT_ATTR_NONE, d.sym);
 
 		// Slash animation
@@ -129,7 +134,7 @@ void draw_entities(struct game_state *s)
 			int sx = ts->target_x - s->cam_x;
 			int sy = ts->target_y - s->cam_y;
 
-			if (sx >= 0 && sx < VIEWPORT_COL && sy >= 0 && sy < VIEWPORT_ROW) {
+			if (sx >= 0 && sx < VIEWPORT_COLS && sy >= 0 && sy < VIEWPORT_ROWS) {
 				if ((s->global_ticks / 30) % 2 == 0) { 
 					pkt_win_putc_color(&s->win_map, sx, sy, 220, 
 							PKT_COLOR_BLACK, PKT_ATTR_NONE, '/');
@@ -146,7 +151,7 @@ inline void draw_items(struct game_state *s)
 		int lx = itm->x - s->cam_x;
 		int ly = itm->y - s->cam_y;
 
-		if (lx >= 0 && lx < VIEWPORT_COL && ly >= 0 && ly < VIEWPORT_ROW) {
+		if (lx >= 0 && lx < VIEWPORT_COLS && ly >= 0 && ly < VIEWPORT_ROWS) {
 			const struct item_def *d = &item_defs[itm->type]; 
 			unsigned int bc = (is_in_selection(s, itm->x, itm->y)) ? COLOR_SELECTED : d->bc; 
 
@@ -216,6 +221,7 @@ void draw_command_box(struct game_state *s)
 
 	struct cmd_text default_cmds [] = {
 		{"d", 2, 1, COMMAND_FC1}, {": Designations", 3, 1, COMMAND_FC2},
+		{"p", 2, 2, COMMAND_FC1}, {": Stockpile", 3, 2, COMMAND_FC2},
 		{"SPACE", 2, 37, COMMAND_FC1}, {": Pause game", 7, 37, COMMAND_FC2},
 		{"Arrow UP/DOWN", 2, 38, COMMAND_FC1}, {": Change speed", 15, 38, COMMAND_FC2},
 	};
@@ -227,6 +233,11 @@ void draw_command_box(struct game_state *s)
 		{"a", 2, 6, COMMAND_FC1}, {": Clear the area", 3, 6, COMMAND_FC2},
 		{"Enter", 2, 37, COMMAND_FC1}, {": Designate", 7, 37, COMMAND_FC2},
 		{"ESC", 19, 37, COMMAND_FC1}, {": Done", 22, 37, COMMAND_FC2},
+	};
+
+	struct cmd_text pile_cmds [] = {
+		{"w", 2, 1, COMMAND_FC1}, {": Wood", 3, 1, COMMAND_FC2},
+		{"s", 2, 2, COMMAND_FC1}, {": Stone", 3, 2, COMMAND_FC2},
 	};
 
 	struct desig_target dt[] = {
@@ -243,9 +254,12 @@ void draw_command_box(struct game_state *s)
 		cmd = default_cmds;
 		cnt = sizeof(default_cmds) / sizeof(default_cmds[0]);
 	} else if (s->mode == MODE_DESIGNATE) {
-		pkt_win_printf_color(w, 2, 1, COMMAND_FC2, COMMAND_BC, PKT_ATTR_BOLD, "TARGET-> [%s]", dt[s->desig_ctx.target]); 
+		pkt_win_printf_color(w, 2, 1, COMMAND_FC2, COMMAND_BC, PKT_ATTR_BOLD, "TARGET-> [%s]", dt[s->drag_ctx.type]); 
 		cmd = designate_cmds;
 		cnt = sizeof(designate_cmds) / sizeof(default_cmds[0]);
+	} else if (s->mode == MODE_PILE) {
+		cmd = pile_cmds;
+		cnt = sizeof(pile_cmds) / sizeof(pile_cmds[0]);
 	}
 
 	for (int i = 0; i < cnt; i++) 
@@ -255,13 +269,13 @@ void draw_command_box(struct game_state *s)
 
 static int is_in_selection(struct game_state *s, int wx, int wy)
 {
-	if (s->mode != MODE_DESIGNATE || s->desig_ctx.is_dragging == 0)
+	if (s->drag_ctx.is_dragging == 0)
 		return 0;
 
 	int cursor_wx = s->cursor_lx + s->cam_x;
 	int cursor_wy = s->cursor_ly + s->cam_y;
-	int start_x = s->desig_ctx.start_wx;
-	int start_y = s->desig_ctx.start_wy;
+	int start_x = s->drag_ctx.start_wx;
+	int start_y = s->drag_ctx.start_wy;
 	
 	int min_x = (start_x < cursor_wx) ? start_x : cursor_wx;
 	int max_x = (start_x > cursor_wx) ? start_x : cursor_wx;
