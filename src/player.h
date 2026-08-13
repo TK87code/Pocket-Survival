@@ -3,6 +3,6 @@
 
 #include "defines.h"
 
-void entity_do_action(struct game_state *s);
+void player_do_action(struct game_state *s);
 
 #endif //ENTITY_H

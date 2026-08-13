@@ -5,9 +5,11 @@
 #include "data.h"
 #include "map.h"
 #include "render.h"
-#include "entity.h"
+#include "player.h"
 #include "pathfind.h"
+#include "task.h"
 #include <stdlib.h>	// atoi
+#include <string.h>	// memset
 
 #define ASTAR_OPTIMIZE_16BIT
 
@@ -19,10 +21,9 @@ enum scenes {
 void game_init(void *user_data);
 void game_update(void *user_data, float dt);
 void game_draw(void *user_data);
-static void spone_entity(struct game_state *s, int type, int wx, int wy, unsigned int flag);
-static void queue_task(struct game_state *s, int wx, int wy);
 static inline void handle_input(struct game_state *s, int key_code);
 static void drag_start(struct game_state *s);
+static void drag_update(struct game_state *s);
 static void drag_end(struct game_state *s);
 static void return_to_mode_default(struct game_state *s);
 
@@ -82,9 +83,16 @@ void game_init(void *user_data)
 	s->astar_ctx = astar_init(MAP_COLS, MAP_ROWS, astar_buffer);
 
 	generate_map(s);	
-
-	spone_entity(s, ENT_COLONIST, 40, 12, FLAG_ENTITY_FRIENDLY);
-	spone_entity(s, ENT_DOG, 41,12, FLAG_ENTITY_FRIENDLY);
+	
+	s->player = (struct player) {
+		.wx = 40,
+		.wy = 12,
+		.state = PLAYER_STATE_IDLE,
+		.current_task_id = -1,
+		.wait_timer = 0,
+		.carrying_item = ITEM_NONE,
+		.carrying_item_amount = 0,
+	};
 }
 
 void game_update(void *user_data, float dt)
@@ -96,6 +104,9 @@ void game_update(void *user_data, float dt)
 		if (e.type == PKT_EVENT_KEY_PRESSED) 
 			handle_input(s, e.data.key.key_code);
 	}
+
+	if (s->drag_ctx.bitflags & FLAG_DRAG_ACTIVE)
+		drag_update(s);
 
 	if (s->cursor_lx < 0)
 		s->cursor_lx = 0;
@@ -118,7 +129,7 @@ void game_update(void *user_data, float dt)
 	s->tick_accumulator += dt * s->time_scale;
 
 	while (s->tick_accumulator >= TICK_INTERVAL) {
-		entity_do_action(s);
+		player_do_action(s);
 		s->global_ticks += 1;
 		s->tick_accumulator -= TICK_INTERVAL;
 	}
@@ -140,37 +151,10 @@ void game_draw(void *user_data)
 		}
 	}
 	draw_items(s);
-	draw_entities(s);
+	draw_player(s);
 
 	if (s->mode == MODE_DESIGNATE || s->mode == MODE_PILE)
 		draw_cursor(s);
-}
-
-static void queue_task(struct game_state *s, int wx, int wy)
-{
-	struct map_cell *c = &s->map[wy][wx];
-
-	int slot_index = -1;
-	for (int i = 0; i < s->task_count; i++) {
-		if (s->task_queue[i].assignee_id == TASK_ABORTED) {
-			slot_index = i;
-			break;
-		}
-	}
-
-	if (slot_index == -1 && s->task_count < MAX_TASK) {
-		slot_index = s->task_count;
-		s->task_count += 1;
-	}
-
-	if (slot_index != -1) {
-		struct task *ts = &s->task_queue[slot_index];
-		ts->type = object_defs[c->object].associated_task;
-		ts->target_x = wx;
-		ts->target_y = wy;
-		ts->assignee_id = TASK_WAITING;
-		c->bitflags |= FLAG_CELL_MARKED;
-	}
 }
 
 static void handle_input(struct game_state *s, int key_code)
@@ -190,13 +174,13 @@ static void handle_input(struct game_state *s, int key_code)
 				case 'd':
 					s->mode = MODE_DESIGNATE;
 					s->time_scale = 0.0f;
-					s->drag_ctx.type = OBJ_ALL;
+					s->drag_ctx.target_mask = 0x00000000;
 					break;
 
 				case 'p':
 					s->mode = MODE_PILE;
 					s->time_scale = 0.0f;
-					s->drag_ctx.type = ITEM_ALL;
+					s->drag_ctx.target_mask = 0x00000000;
 					break;
 
 				case 'h': s->cam_x -= 10; break;
@@ -212,16 +196,15 @@ static void handle_input(struct game_state *s, int key_code)
 					return_to_mode_default(s);
 					break;
 				case PKT_KEY_ENTER:
-					if (s->drag_ctx.is_dragging == 0)  
+					if ((s->drag_ctx.bitflags & FLAG_DRAG_ACTIVE) == 0 && s->drag_ctx.target_mask != 0)  
 						drag_start(s);
-					else 
+					else if ((s->drag_ctx.bitflags & FLAG_DRAG_RESTRICTED) == 0)
 						drag_end(s);
 					break;
 
-				case 't': s->drag_ctx.type = OBJ_TREE; break;
-				case 'r': s->drag_ctx.type = OBJ_ROCK; break;
-				case 'g': s->drag_ctx.type = OBJ_GRASS; break;
-				case 'a': s->drag_ctx.type = OBJ_ALL; break;
+				case 't': s->drag_ctx.target_mask ^= (1 << OBJ_TREE); break;
+				case 'r': s->drag_ctx.target_mask ^= (1 << OBJ_ROCK); break;
+				case 'g': s->drag_ctx.target_mask ^= (1 << OBJ_GRASS); break;
 
 				case 'h': s->cursor_lx -= 1; break;
 				case 'l': s->cursor_lx += 1; break;
@@ -237,14 +220,14 @@ static void handle_input(struct game_state *s, int key_code)
 					break;
 
 				case PKT_KEY_ENTER:
-					if (s->drag_ctx.is_dragging == 0) 
+					if ((s->drag_ctx.bitflags & FLAG_DRAG_ACTIVE) == 0 && s->drag_ctx.target_mask != 0) 
 						drag_start(s);
 					else 
 						drag_end(s);
 					break;
 
-				case 'w': s->drag_ctx.type = ITEM_WOOD; break;
-				case 's': s->drag_ctx.type = ITEM_STONE; break;		
+				case 'w': s->drag_ctx.target_mask ^= (1 << ITEM_WOOD); break;
+				case 's': s->drag_ctx.target_mask ^= (1 << ITEM_STONE); break;		
 
 				case 'h': s->cursor_lx -= 1; break;
 				case 'l': s->cursor_lx += 1; break;
@@ -255,65 +238,81 @@ static void handle_input(struct game_state *s, int key_code)
 	}
 }
 
-static void spone_entity(struct game_state *s, int type, int wx, int wy, unsigned int flag)
-{
-	if (s->entity_count >= MAX_ENTITY)
-		return;
-
-	s->entities[s->entity_count] = (struct entity){
-		.type = type,
-		.wx = wx,
-		.wy = wy,
-		.state = ENT_STATE_IDLE,
-		.current_task_id = -1,
-		.wait_timer = 0,
-		.carrying_item = ITEM_NONE,
-		.carrying_item_amount = 0,
-		.bitflags = flag,
-	};
-
-	s->entity_count++;
-}
-
 static void drag_start(struct game_state *s)
 {
-	s->drag_ctx.is_dragging = 1;
-	s->drag_ctx.start_wx = s->cursor_lx + s->cam_x;
-	s->drag_ctx.start_wy = s->cursor_ly + s->cam_y;
+	int cursor_wx = s->cursor_lx + s->cam_x;
+	int cursor_wy = s->cursor_ly + s->cam_y;
+	s->drag_ctx.bitflags |= FLAG_DRAG_ACTIVE;
+	s->drag_ctx.start_wx = cursor_wx;
+	s->drag_ctx.start_wy = cursor_wy;
+}
+
+static void drag_update(struct game_state *s)
+{
+	int cursor_wx = s->cursor_lx + s->cam_x;
+	int cursor_wy = s->cursor_ly + s->cam_y;
+
+	s->drag_ctx.min_wx = (cursor_wx <= s->drag_ctx.start_wx) ? cursor_wx : s->drag_ctx.start_wx;
+	s->drag_ctx.min_wy = (cursor_wy <= s->drag_ctx.start_wy) ? cursor_wy : s->drag_ctx.start_wy;
+	s->drag_ctx.max_wx = (s->drag_ctx.min_wx == s->drag_ctx.start_wx) ? cursor_wx : s->drag_ctx.start_wx;
+	s->drag_ctx.max_wy = (s->drag_ctx.min_wy == s->drag_ctx.start_wy) ? cursor_wy : s->drag_ctx.start_wy;
+
+	s->drag_ctx.bitflags &= ~FLAG_DRAG_RESTRICTED;
+
+	if (s->mode == MODE_PILE) {
+		for (int wy = s->drag_ctx.min_wy; wy <= s->drag_ctx.max_wy; wy++) {
+			for (int wx = s->drag_ctx.min_wx; wx <= s->drag_ctx.max_wx; wx++) {
+				struct map_cell c = s->map[wy][wx];	
+				if (c.object != OBJ_NONE || c.bitflags != 0) {
+					s->drag_ctx.bitflags |= FLAG_DRAG_RESTRICTED;
+					return;
+				}	
+			}
+		}
+	}
 }
 
 static void drag_end(struct game_state *s)  
 {
-	int cursor_wx = s->cursor_lx + s->cam_x;
-	int cursor_wy = s->cursor_ly + s->cam_y;
-	int min_x = (cursor_wx <= s->drag_ctx.start_wx) ? cursor_wx : s->drag_ctx.start_wx;
-	int min_y = (cursor_wy <= s->drag_ctx.start_wy) ? cursor_wy : s->drag_ctx.start_wy;
-	int max_x = (min_x == s->drag_ctx.start_wx) ? cursor_wx : s->drag_ctx.start_wx;
-	int max_y = (min_y == s->drag_ctx.start_wy) ? cursor_wy : s->drag_ctx.start_wy;
-
-	for (int wy = min_y; wy <= max_y; wy++) {
-		for (int wx = min_x; wx <= max_x; wx++) {
+	const struct dragging_context *dc = &s->drag_ctx;
+	for (int wy = dc->min_wy; wy <= dc->max_wy; wy++) {
+		for (int wx = dc->min_wx; wx <= dc->max_wx; wx++) {
 			struct map_cell *c = &s->map[wy][wx];
-			if (s->mode == MODE_DESIGNATE){
-				if (s->drag_ctx.type == OBJ_ALL && c->object != OBJ_NONE)
-					queue_task(s, wx, wy);
-				else if (c->object == s->drag_ctx.type)
-					queue_task(s, wx, wy);
-			} else if (s->mode == MODE_PILE) {
-				c->bitflags |= FLAG_CELL_PILE_AREA;
-				struct pile_area *pe = s->pile_areas[pile_area_count];
-				pe->min_wx = min_wx;
-				pe->min_wy = min_wy;
-				pe->max_wx = max_wx;
-				pe->max_wy = max_wy;
+			switch (s->mode) {
+				case MODE_DEFAULT:
+					break;
+					
+				case MODE_DESIGNATE:
+					if (c->object != OBJ_NONE && (dc->target_mask & (1 << c->object)))
+						queue_task(s, wx, wy);
+					break;
+
+				case MODE_PILE:
+					c->bitflags |= FLAG_CELL_PILE_AREA;
+					break;
 			}
 		}
 	}
-	s->drag_ctx.is_dragging = 0;
+
+	if (s->mode == MODE_PILE) {
+		struct pile_area *pa = &s->pile_areas[s->pile_area_count];
+		pa->min_wx = dc->min_wx;
+		pa->min_wy = dc->min_wy;
+		pa->max_wx = dc->max_wx;
+		pa->max_wy = dc->max_wy;
+		pa->accepted_items_mask = s->drag_ctx.target_mask;
+		s->pile_area_count++;
+	}
+
+	memset(&s->drag_ctx, 0, sizeof(struct dragging_context)); 
+	//s->drag_ctx.target_mask = 0;
+	//s->drag_ctx.bitflags = 0;
 }
 
 static void return_to_mode_default(struct game_state *s)
 {
+	memset(&s->drag_ctx, 0, sizeof(struct dragging_context)); 
+	//s->drag_ctx.bitflags &= ~FLAG_DRAG_ACTIVE;
 	s->mode = MODE_DEFAULT;
 	s->time_scale = 1.0f;
 	s->cursor_lx = VIEWPORT_COLS / 2;

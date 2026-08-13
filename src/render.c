@@ -2,24 +2,22 @@
 #include "defines.h"
 #include "data.h"
 #include "ext/pkt_win.h"
+#include <string.h>
 
 #define COLOR_SELECTED 11
 #define COMMAND_FC1 10 // fc for cmds
 #define COMMAND_FC2 PKT_COLOR_WHITE // fc for cmd descriptions
 #define COMMAND_BC 16 
 
-struct cmd_text {
-	const char *text;
-	int lx, ly;
-	enum pkt_color fc;
-};
-
-struct desig_target {
-	const char *text;
+struct cmd_line {
+	const char *key;
+	const char *desc;
+	int ly;
+	uint32_t mask_bit;
 };
 
 static void diversify_terrains(int wx, int wy, char *sym, unsigned int *fc, unsigned int t);
-static int is_in_selection(struct game_state *s, int wx, int wy);
+static unsigned int override_bc(struct game_state *s, int wx, int wy, unsigned int bc);
 
 void draw_ingame_clock(struct game_state *s)
 {
@@ -73,7 +71,7 @@ void draw_terrains(struct game_state *s, int lx, int ly)
 
 	char sym = terrain_defs[c.terrain].sym;
 	unsigned int fc = terrain_defs[c.terrain].fc;
-	unsigned int bc = (is_in_selection(s, wx, wy)) ? COLOR_SELECTED : terrain_defs[c.terrain].bc;
+	unsigned int bc = override_bc(s, wx, wy, terrain_defs[c.terrain].bc);
 
 	diversify_terrains(wx, wy, &sym, &fc, c.terrain);	
 
@@ -88,7 +86,7 @@ void draw_objects(struct game_state *s, int lx, int ly)
 
 	if (c.object != OBJ_NONE) {
 		const struct object_def *od = &object_defs[c.object];
-		unsigned int bc = (is_in_selection(s, wx, wy)) ? COLOR_SELECTED : od->bc;
+		unsigned int bc = override_bc(s, wx, wy, od->bc);
 
 		if (od->sym_str != NULL)  
 			pkt_win_puts_color(&s->win_map, lx, ly, 
@@ -104,7 +102,7 @@ void draw_overlays(struct game_state *s, int lx, int ly)
 	int wx = s->cam_x + lx;
 	int wy = s->cam_y + ly;
 	struct map_cell c = s->map[wy][wx];
-	unsigned int bc = (is_in_selection(s, wx, wy)) ? COLOR_SELECTED : 16;
+	unsigned int bc = override_bc(s, wx, wy, 16);
 
 	if (c.bitflags & FLAG_CELL_MARKED) {
 		pkt_win_puts_color(&s->win_map, lx, ly, 1, bc, PKT_ATTR_BOLD, "¤");
@@ -115,29 +113,26 @@ void draw_overlays(struct game_state *s, int lx, int ly)
 	}
 }
 
-void draw_entities(struct game_state *s)
+void draw_player(struct game_state *s)
 {
-	for (int i = 0; i < s->entity_count; i++) {
-		struct entity *e = &s->entities[i];
-		struct entity_def d = entity_defs[e->type];
-		unsigned int bc = (is_in_selection(s, e->wx, e->wy)) ? COLOR_SELECTED : d.bc;
+	struct player *p = &s->player;
+	unsigned int bc = override_bc(s, p->wx, p->wy, 16);
 
-		int ex = e->wx - s->cam_x;
-		int ey = e->wy - s->cam_y;
-		if (ex >= 0 && ex < VIEWPORT_COLS && ey >= 0 && ey < VIEWPORT_ROWS) 
-			pkt_win_putc_color(&s->win_map, ex, ey,	d.fc, bc, PKT_ATTR_NONE, d.sym);
+	int lx = p->wx - s->cam_x;
+	int ly = p->wy - s->cam_y;
 
-		// Slash animation
-		if (e->state == ENT_STATE_WORK) {
-			struct task *ts = &s->task_queue[e->current_task_id];	
-			int sx = ts->target_x - s->cam_x;
-			int sy = ts->target_y - s->cam_y;
+	if (lx >= 0 && lx < VIEWPORT_COLS && ly >= 0 && ly < VIEWPORT_ROWS) 
+		pkt_win_putc_color(&s->win_map, lx, ly,	PKT_COLOR_WHITE, bc, PKT_ATTR_NONE, '@');
 
-			if (sx >= 0 && sx < VIEWPORT_COLS && sy >= 0 && sy < VIEWPORT_ROWS) {
-				if ((s->global_ticks / 30) % 2 == 0) { 
-					pkt_win_putc_color(&s->win_map, sx, sy, 220, 
-							PKT_COLOR_BLACK, PKT_ATTR_NONE, '/');
-				}
+	// Slash animation
+	if (p->state == PLAYER_STATE_WORK) {
+		struct task *ts = &s->task_queue[p->current_task_id];	
+		int sx = ts->target_wx - s->cam_x;
+		int sy = ts->target_wy - s->cam_y;
+
+		if (sx >= 0 && sx < VIEWPORT_COLS && sy >= 0 && sy < VIEWPORT_ROWS) {
+			if ((s->global_ticks / 30) % 2 == 0) { 
+				pkt_win_putc_color(&s->win_map, sx, sy, 220, 16, PKT_ATTR_BOLD, '/');
 			}
 		}
 	}
@@ -152,7 +147,7 @@ inline void draw_items(struct game_state *s)
 
 		if (lx >= 0 && lx < VIEWPORT_COLS && ly >= 0 && ly < VIEWPORT_ROWS) {
 			const struct item_def *d = &item_defs[itm->type]; 
-			unsigned int bc = (is_in_selection(s, itm->x, itm->y)) ? COLOR_SELECTED : d->bc; 
+			unsigned int bc = override_bc(s, itm->x, itm->y, d->bc); 
 
 			if (d->sym_str != NULL)
 				pkt_win_puts_color(&s->win_map, lx, ly, d->fc, bc, d->attr, d->sym_str);
@@ -166,10 +161,10 @@ void draw_cursor(struct game_state *s)
 {
 	int cursor_wx = s->cursor_lx + s->cam_x;
 	int cursor_wy = s->cursor_ly + s->cam_y;
-	unsigned int fc = (is_in_selection(s, cursor_wx, cursor_wy)) ? 16 : PKT_COLOR_WHITE;
-	unsigned int bc = (is_in_selection(s, cursor_wx, cursor_wy)) ? COLOR_SELECTED : 16; 
+	//unsigned int fc = (is_in_selection(s, cursor_wx, cursor_wy)) ? 16 : PKT_COLOR_WHITE;
+	unsigned int bc = override_bc(s, cursor_wx, cursor_wy, 16); 
 
-	pkt_win_putc_color(&s->win_map, s->cursor_lx, s->cursor_ly, fc, bc, PKT_ATTR_BOLD, 'X');
+	pkt_win_putc_color(&s->win_map, s->cursor_lx, s->cursor_ly, PKT_COLOR_RED, bc, PKT_ATTR_BOLD, 'X');
 }
 
 static void diversify_terrains(int wx, int wy, char *sym, unsigned int *fc, unsigned int t)
@@ -218,42 +213,35 @@ void draw_command_box(struct game_state *s)
 	pkt_win_box(w);
 	pkt_win_puts(w, 2, 0, " COMMANDS ");
 
-	struct cmd_text default_cmds [] = {
-		{"d", 2, 1, COMMAND_FC1}, {": Designations", 3, 1, COMMAND_FC2},
-		{"p", 2, 2, COMMAND_FC1}, {": Stockpile", 3, 2, COMMAND_FC2},
-		{"SPACE", 2, 37, COMMAND_FC1}, {": Pause game", 7, 37, COMMAND_FC2},
-		{"Arrow UP/DOWN", 2, 38, COMMAND_FC1}, {": Change speed", 15, 38, COMMAND_FC2},
+	struct cmd_line default_cmds [] = {
+		{"d", ": Designations", 1, 0},
+		{"p", ": Stockpile", 2, 0},
+		{"SPACE", ": Pause game", 37, 0},
+		{"Arrow UP/DOWN", ": Change speed", 38, 0},
 	};
 
-	struct cmd_text designate_cmds [] = {
-		{"t", 2, 3, COMMAND_FC1}, {": Chop down trees", 3, 3, COMMAND_FC2},
-		{"r", 2, 4, COMMAND_FC1}, {": Mine rocks", 3, 4, COMMAND_FC2},
-		{"g", 2, 5, COMMAND_FC1}, {": Mown grass", 3, 5, COMMAND_FC2},
-		{"a", 2, 6, COMMAND_FC1}, {": Clear the area", 3, 6, COMMAND_FC2},
-		{"Enter", 2, 37, COMMAND_FC1}, {": Designate", 7, 37, COMMAND_FC2},
-		{"ESC", 19, 37, COMMAND_FC1}, {": Done", 22, 37, COMMAND_FC2},
+	struct cmd_line designate_cmds [] = {
+		{"t", ": Chop down trees", 1, (1 << OBJ_TREE)},
+		{"r", ": Mine rocks", 2, (1 << OBJ_ROCK)},
+		{"g", ": Mown grass", 3, (1 << OBJ_GRASS)},
+		{"Enter", ": Designate", 37, 0},
+		{"ESC", ": Done", 38, 0},
 	};
 
-	struct cmd_text pile_cmds [] = {
-		{"w", 2, 1, COMMAND_FC1}, {": Wood", 3, 1, COMMAND_FC2},
-		{"s", 2, 2, COMMAND_FC1}, {": Stone", 3, 2, COMMAND_FC2},
+	struct cmd_line pile_cmds [] = {
+		{"w", ": Wood", 1, (1 << ITEM_WOOD)},
+		{"s", ": Stone", 2, (1 << ITEM_STONE)},
+		{"Enter", ": Set pile area", 37, 0},
+		{"ESC", ": Done", 38, 0},
 	};
 
-	struct desig_target dt[] = {
-		[OBJ_ALL] = {"All"},
-		[OBJ_TREE] = {"Tree"},
-		[OBJ_ROCK] = {"Rock"},
-		[OBJ_GRASS] = {"Grass"},
-	};
-
-	struct cmd_text *cmd = NULL;
+	struct cmd_line *cmd = NULL;
 	int cnt = 0;
 
 	if (s->mode == MODE_DEFAULT) {
 		cmd = default_cmds;
 		cnt = sizeof(default_cmds) / sizeof(default_cmds[0]);
 	} else if (s->mode == MODE_DESIGNATE) {
-		pkt_win_printf_color(w, 2, 1, COMMAND_FC2, COMMAND_BC, PKT_ATTR_BOLD, "TARGET-> [%s]", dt[s->drag_ctx.type]); 
 		cmd = designate_cmds;
 		cnt = sizeof(designate_cmds) / sizeof(default_cmds[0]);
 	} else if (s->mode == MODE_PILE) {
@@ -261,28 +249,28 @@ void draw_command_box(struct game_state *s)
 		cnt = sizeof(pile_cmds) / sizeof(pile_cmds[0]);
 	}
 
-	for (int i = 0; i < cnt; i++) 
-		pkt_win_puts_color(w, cmd[i].lx, cmd[i].ly, cmd[i].fc, 
-				(enum pkt_color)COMMAND_BC, PKT_ATTR_BOLD, cmd[i].text); 
+	for (int i = 0; i < cnt; i++) {
+		unsigned int desc_color = COMMAND_FC2;
+
+		if (cmd[i].mask_bit != 0 && (s->drag_ctx.target_mask & cmd[i].mask_bit)) 
+			desc_color = COLOR_SELECTED;
+
+		pkt_win_puts_color(w, 2, cmd[i].ly, COMMAND_FC1, COMMAND_BC, PKT_ATTR_BOLD, cmd[i].key);
+
+		int lx_offset = 2 + strlen(cmd[i].key);
+		pkt_win_puts_color(w, lx_offset, cmd[i].ly, desc_color, COMMAND_BC, PKT_ATTR_BOLD, cmd[i].desc);
+	}
 }
 
-static int is_in_selection(struct game_state *s, int wx, int wy)
+static unsigned int override_bc(struct game_state *s, int wx, int wy, unsigned int bc)
 {
-	if (s->drag_ctx.is_dragging == 0)
-		return 0;
+	const struct dragging_context *dc = &s->drag_ctx;
 
-	int cursor_wx = s->cursor_lx + s->cam_x;
-	int cursor_wy = s->cursor_ly + s->cam_y;
-	int start_x = s->drag_ctx.start_wx;
-	int start_y = s->drag_ctx.start_wy;
-	
-	int min_x = (start_x < cursor_wx) ? start_x : cursor_wx;
-	int max_x = (start_x > cursor_wx) ? start_x : cursor_wx;
-	int min_y = (start_y < cursor_wy) ? start_y : cursor_wy;
-	int max_y = (start_y > cursor_wy) ? start_y : cursor_wy;
+	if ((dc->bitflags & FLAG_DRAG_ACTIVE) == 0)
+		return bc;
 
-	if (wx >= min_x && wx <= max_x && wy >= min_y && wy <= max_y)
-		return 1;
+	if (wx >= dc->min_wx && wx <= dc->max_wx && wy >= dc->min_wy && wy <= dc->max_wy)
+		return (dc->bitflags & FLAG_DRAG_RESTRICTED) ? PKT_COLOR_RED : COLOR_SELECTED;
 
-	return 0;
+	return bc;
 }

@@ -2,26 +2,21 @@
 #include "defines.h"
 
 struct terrain_def terrain_defs[] = {
-	[TERRAIN_DEEP_WATER] = 	{0,   '~', 18, 16, 0x00},
-	[TERRAIN_GRAVEL] = 	{100, ':', 244, 16, FLAG_CELL_WALKABLE},
-	[TERRAIN_SOIL] = 	{100, '.', 137, 16, FLAG_CELL_WALKABLE},
-	[TERRAIN_MUD] = 	{150, '=', 94, 16, FLAG_CELL_WALKABLE},
-	[TERRAIN_WATER] = 	{0,   '~', 33, 16, 0x00},
-	[TERRAIN_SHALLOWS] = 	{200, '-', 45, 16, FLAG_CELL_WALKABLE},
-	[TERRAIN_MOUNTAIN] = 	{0,   '^', 250, 16, 0x00},
-};
-
-struct entity_def entity_defs[] = {
-	[ENT_COLONIST] = 	{HUMAN_BASE_TICKS, '@', 15, 16, PKT_ATTR_NONE, },
-	[ENT_DOG] = 		{(HUMAN_BASE_TICKS / 2),'d', 15, 16, PKT_ATTR_NONE},
+	[TERRAIN_DEEP_WATER] = 	{0,   '~', 18, 16, FLAG_CELL_OBSTRACT},
+	[TERRAIN_GRAVEL] = 	{100, ':', 244, 16, 0x00},
+	[TERRAIN_SOIL] = 	{100, '.', 137, 16, 0x00},
+	[TERRAIN_MUD] = 	{150, '=', 94, 16, 0x00},
+	[TERRAIN_WATER] = 	{0,   '~', 33, 16, FLAG_CELL_OBSTRACT},
+	[TERRAIN_SHALLOWS] = 	{200, '-', 45, 16, 0x00},
+	[TERRAIN_MOUNTAIN] = 	{0,   '^', 250, 16, FLAG_CELL_OBSTRACT},
 };
 
 struct object_def object_defs[] = {
 	[OBJ_ALL] =	{0},
 	[OBJ_NONE] = 	{0},
-	[OBJ_TREE] =	{NULL, 'Y', 94, 16, PKT_ATTR_BOLD, FLAG_OBJ_WALKABLE, TASK_CHOP_TREE}, 
-	[OBJ_ROCK] =	{NULL, 'O', 58, 16, PKT_ATTR_BOLD, 0x00, TASK_MINE_ROCK},
-	[OBJ_GRASS] =	{NULL, '"', 76, 16, PKT_ATTR_NONE, FLAG_OBJ_WALKABLE, TASK_MOW_GRASS}, 
+	[OBJ_TREE] =	{NULL, 'Y', 94, 16, PKT_ATTR_BOLD, 0x00, TASK_CHOP_TREE}, 
+	[OBJ_ROCK] =	{NULL, 'O', 58, 16, PKT_ATTR_BOLD, FLAG_OBJ_OBSTRACT, TASK_MINE_ROCK},
+	[OBJ_GRASS] =	{NULL, '"', 76, 16, PKT_ATTR_NONE, 0x00, TASK_MOW_GRASS}, 
 };
 
 struct item_def item_defs[] = {
