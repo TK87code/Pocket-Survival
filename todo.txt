@@ -1,5 +1,0 @@
-- code cleanup (delete color hard coding)
-- "struct designate_context"
-- chop down tree etc.
-- better switches on input handler and command window drawer
-- designate area & hauling command
