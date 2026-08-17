@@ -16,13 +16,20 @@ enum scenes {
 	SCENE_PLAY,
 };
 
-void game_init(void *user_data);
-void game_update(void *user_data, float dt);
-void game_draw(void *user_data);
-static inline void handle_input(struct game_state *s, int key_code);
+static void game_init(void *user_data);
+static void game_update(void *user_data, float dt);
+static void game_draw(void *user_data);
+static void handle_input(struct game_state *s, int key_code);
+static inline void handle_mode_default_input(struct game_state *s, int key_code);
+static inline void handle_mode_designate_input(struct game_state *s, int key_code);
+static inline void handle_mode_pile_input(struct game_state *s, int key_code);
+static inline void clump_cursor(struct game_state *s);
+static inline void clump_cam(struct game_state *s);
 static void drag_start(struct game_state *s);
 static void drag_update(struct game_state *s);
 static void drag_end(struct game_state *s);
+static inline void register_pile_area(struct game_state *s);
+static inline void search_remained_dropped_items(struct game_state *s);
 static void return_to_mode_default(struct game_state *s);
 
 int main(int argc, char *argv[]) 
@@ -64,7 +71,7 @@ int main(int argc, char *argv[])
 	return 0;
 }
 
-void game_init(void *user_data) 
+static void game_init(void *user_data) 
 {
 	struct game_state *s = (struct game_state *)user_data;
 
@@ -95,7 +102,7 @@ void game_init(void *user_data)
 	};
 }
 
-void game_update(void *user_data, float dt)
+static void game_update(void *user_data, float dt)
 {
 	struct game_state *s = (struct game_state *)user_data;
 	struct pkt_event e;
@@ -108,23 +115,8 @@ void game_update(void *user_data, float dt)
 	if (s->drag_ctx.bitflags & FLAG_DRAG_ACTIVE)
 		drag_update(s);
 
-	if (s->cursor_lx < 0)
-		s->cursor_lx = 0;
-	if (s->cursor_lx > VIEWPORT_COLS - 1)
-		s->cursor_lx = VIEWPORT_COLS - 1;
-	if (s->cursor_ly < 0)
-		s->cursor_ly = 0;
-	if (s->cursor_ly > VIEWPORT_ROWS - 1)
-		s->cursor_ly = VIEWPORT_ROWS - 1;
-
-	if (s->cam_x < 0)
-		s->cam_x = 0;
-	if (s->cam_y < 0)
-		s->cam_y = 0;
-	if (s->cam_x > MAP_COLS - VIEWPORT_COLS)
-		s->cam_x = MAP_COLS - VIEWPORT_COLS;
-	if (s->cam_y > MAP_ROWS - VIEWPORT_ROWS)
-		s->cam_y = MAP_ROWS - VIEWPORT_ROWS;
+	clump_cursor(s);
+	clump_cam(s);
 
 	s->tick_accumulator += dt * s->time_scale;
 
@@ -163,74 +155,15 @@ static void handle_input(struct game_state *s, int key_code)
 
 	switch (s->mode) {
 		case MODE_DEFAULT:
-			switch (key_code) {
-				case PKT_KEY_SPACE:
-					(s->time_scale == 0.0f) ? (s->time_scale = 1.0f) : (s->time_scale = 0.0f);
-					break;
-
-				case 'd':
-					s->mode = MODE_DESIGNATE;
-					s->time_scale = 0.0f;
-					s->drag_ctx.target_mask = 0x00000000;
-					break;
-
-				case 'p':
-					s->mode = MODE_PILE;
-					s->time_scale = 0.0f;
-					s->drag_ctx.target_mask = 0x00000000;
-					break;
-
-				case 'h': s->cam_x -= 10; break;
-				case 'l': s->cam_x += 10; break;
-				case 'j': s->cam_y += 5; break;
-				case 'k': s->cam_y -= 5; break;
-			}
+			handle_mode_default_input(s, key_code);
 			break;
 
 		case MODE_DESIGNATE:
-			switch (key_code) {
-				case PKT_KEY_ESCAPE:
-					return_to_mode_default(s);
-					break;
-				case PKT_KEY_ENTER:
-					if ((s->drag_ctx.bitflags & FLAG_DRAG_ACTIVE) == 0 && s->drag_ctx.target_mask != 0)  
-						drag_start(s);
-					else if ((s->drag_ctx.bitflags & FLAG_DRAG_RESTRICTED) == 0)
-						drag_end(s);
-					break;
-
-				case 't': s->drag_ctx.target_mask ^= (1 << OBJ_TREE); break;
-				case 'r': s->drag_ctx.target_mask ^= (1 << OBJ_ROCK); break;
-				case 'g': s->drag_ctx.target_mask ^= (1 << OBJ_GRASS); break;
-
-				case 'h': s->cursor_lx -= 1; break;
-				case 'l': s->cursor_lx += 1; break;
-				case 'j': s->cursor_ly += 1; break;
-				case 'k': s->cursor_ly -= 1; break;
-			}
+			handle_mode_designate_input(s, key_code);
 			break;
 
 		case MODE_PILE: 
-			switch (key_code) {
-				case PKT_KEY_ESCAPE:
-					return_to_mode_default(s);
-					break;
-
-				case PKT_KEY_ENTER:
-					if ((s->drag_ctx.bitflags & FLAG_DRAG_ACTIVE) == 0 && s->drag_ctx.target_mask != 0) 
-						drag_start(s);
-					else 
-						drag_end(s);
-					break;
-
-				case 'w': s->drag_ctx.target_mask ^= (1 << ITEM_WOOD); break;
-				case 's': s->drag_ctx.target_mask ^= (1 << ITEM_STONE); break;		
-
-				case 'h': s->cursor_lx -= 1; break;
-				case 'l': s->cursor_lx += 1; break;
-				case 'j': s->cursor_ly += 1; break;
-				case 'k': s->cursor_ly -= 1; break;
-			}
+			handle_mode_pile_input(s, key_code);
 			break;
 	}
 }
@@ -292,15 +225,8 @@ static void drag_end(struct game_state *s)
 		}
 	}
 
-	if (s->mode == MODE_PILE) {
-		struct pile_area *pa = &s->pile_areas[s->pile_area_count];
-		pa->min_wx = dc->min_wx;
-		pa->min_wy = dc->min_wy;
-		pa->max_wx = dc->max_wx;
-		pa->max_wy = dc->max_wy;
-		pa->accepted_items_mask = s->drag_ctx.target_mask;
-		s->pile_area_count++;
-	}
+	if (s->mode == MODE_PILE)
+		register_pile_area(s);
 
 	memset(&s->drag_ctx, 0, sizeof(struct dragging_context)); 
 }
@@ -312,4 +238,166 @@ static void return_to_mode_default(struct game_state *s)
 	s->time_scale = 1.0f;
 	s->cursor_lx = VIEWPORT_COLS / 2;
 	s->cursor_ly = VIEWPORT_ROWS / 2;
+}
+
+static inline void clump_cursor(struct game_state *s)
+{
+	if (s->cursor_lx < 0)
+		s->cursor_lx = 0;
+	if (s->cursor_lx > VIEWPORT_COLS - 1)
+		s->cursor_lx = VIEWPORT_COLS - 1;
+	if (s->cursor_ly < 0)
+		s->cursor_ly = 0;
+	if (s->cursor_ly > VIEWPORT_ROWS - 1)
+		s->cursor_ly = VIEWPORT_ROWS - 1;
+}
+
+static inline void clump_cam(struct game_state *s)
+{
+	if (s->cam_x < 0)
+		s->cam_x = 0;
+	if (s->cam_y < 0)
+		s->cam_y = 0;
+	if (s->cam_x > MAP_COLS - VIEWPORT_COLS)
+		s->cam_x = MAP_COLS - VIEWPORT_COLS;
+	if (s->cam_y > MAP_ROWS - VIEWPORT_ROWS)
+		s->cam_y = MAP_ROWS - VIEWPORT_ROWS;
+}
+
+static inline void handle_mode_default_input(struct game_state *s, int key_code)
+{
+	switch (key_code) {
+		case PKT_KEY_SPACE:
+			(s->time_scale == 0.0f) ? (s->time_scale = 1.0f) : (s->time_scale = 0.0f);
+			break;
+
+		case 'd':
+			s->mode = MODE_DESIGNATE;
+			s->time_scale = 0.0f;
+			s->drag_ctx.target_mask = 0x00000000;
+			break;
+
+		case 'p':
+			s->mode = MODE_PILE;
+			s->time_scale = 0.0f;
+			s->drag_ctx.target_mask = 0x00000000;
+			break;
+
+		case 'h': 
+			s->cam_x -= 10; 
+			break;
+		case 'l': 
+			s->cam_x += 10; 
+			break;
+		case 'j': 
+			s->cam_y += 5; 
+			break;
+		case 'k': 
+			s->cam_y -= 5; 
+			break;
+	}            
+}
+
+static inline void handle_mode_designate_input(struct game_state *s, int key_code)
+{
+	switch (key_code) {
+		case PKT_KEY_ESCAPE:
+			return_to_mode_default(s);
+			break;
+			
+		case PKT_KEY_ENTER:
+			if ((s->drag_ctx.bitflags & FLAG_DRAG_ACTIVE) == 0) {
+				if (s->drag_ctx.target_mask != 0)
+					drag_start(s);
+			} else { 
+				if ((s->drag_ctx.bitflags & FLAG_DRAG_RESTRICTED) == 0) 
+					drag_end(s);
+			}
+			break;
+
+		case 't': 
+			s->drag_ctx.target_mask ^= (1 << OBJ_TREE); 
+			break;
+		case 'r': 
+			s->drag_ctx.target_mask ^= (1 << OBJ_ROCK); 
+			break;
+		case 'g': 
+			s->drag_ctx.target_mask ^= (1 << OBJ_GRASS); 
+			break;
+
+		case 'h': 
+			s->cursor_lx -= 1; 
+			break;
+		case 'l': 
+			s->cursor_lx += 1; 
+			break;
+		case 'j': 
+			s->cursor_ly += 1; 
+			break;
+		case 'k': 
+			s->cursor_ly -= 1; 
+			break;
+	}
+}
+
+static inline void handle_mode_pile_input(struct game_state *s, int key_code)
+{
+	switch (key_code) {
+		case PKT_KEY_ESCAPE:
+			return_to_mode_default(s);
+			break;
+
+		case PKT_KEY_ENTER:
+			if ((s->drag_ctx.bitflags & FLAG_DRAG_ACTIVE) == 0) {
+				if (s->drag_ctx.target_mask != 0)
+					drag_start(s);
+			} else { 
+				if ((s->drag_ctx.bitflags & FLAG_DRAG_RESTRICTED) == 0) 
+					drag_end(s);
+			}
+			break;
+
+		case 'w': 
+			s->drag_ctx.target_mask ^= (1 << ITEM_WOOD); 
+			break;
+		case 's': 
+			s->drag_ctx.target_mask ^= (1 << ITEM_STONE); 
+			break;		
+
+		case 'h': 
+			s->cursor_lx -= 1; 
+			break;
+		case 'l': 
+			s->cursor_lx += 1; 
+			break;
+		case 'j': 
+			s->cursor_ly += 1; 
+			break;
+		case 'k': 
+			s->cursor_ly -= 1; 
+			break;
+	}
+}
+
+static inline void register_pile_area(struct game_state *s)
+{
+	struct pile_area *pa = &s->pile_areas[s->pile_area_count];
+	pa->min_wx = s->drag_ctx.min_wx;
+	pa->min_wy = s->drag_ctx.min_wy;
+	pa->max_wx = s->drag_ctx.max_wx;
+	pa->max_wy = s->drag_ctx.max_wy;
+	pa->accepted_items_mask = s->drag_ctx.target_mask;
+	s->pile_area_count++;
+
+	search_remained_dropped_items(s);
+}
+
+static inline void search_remained_dropped_items(struct game_state *s)
+{
+	for (int i = 0; i < s->items.count; i++) {
+		if ((s->items.bitflags[i] & (FLAG_ITEM_STORED | FLAG_ITEM_RESERVED)) == 0) {
+			s->items.bitflags[i] |= FLAG_ITEM_RESERVED;
+			queue_task(s, s->items.wx[i], s->items.wy[i], TASK_FETCH);
+		}
+	}
 }

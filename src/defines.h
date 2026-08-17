@@ -119,6 +119,7 @@ struct player { // bytes
 #define MAX_DROPPED_ITEM 1024
 
 #define FLAG_ITEM_STORED (1 << 0)
+#define FLAG_ITEM_RESERVED (1 << 1)
 struct item_data {
 	int16_t count;
 	int16_t wx[MAX_DROPPED_ITEM];
@@ -224,8 +225,9 @@ struct game_state {
 	struct pkt_window win_status;
 	struct pkt_window win_command;
 	struct pkt_window win_log;
-	struct astar_context *astar_ctx;
 	struct dragging_context drag_ctx;
+
+	struct astar_context *astar_ctx;
 
 	struct biheap_node task_heap_buffer[MAX_TASK];
 	struct biheap_manager task_heap;

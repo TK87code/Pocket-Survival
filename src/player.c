@@ -72,10 +72,11 @@ void player_do_action(struct game_state *s)
 							s->items.wy[n_idx] = ty;
 							s->items.type[n_idx] = drop_defs[type].item_type;
 							s->items.amount[n_idx] = drop_defs[type].amount;
-							s->items.bitflags[n_idx] = 0;
 							s->items.count += 1;
 							
 							queue_task(s, tx, ty, TASK_FETCH);
+							s->items.bitflags[n_idx] = FLAG_ITEM_RESERVED;
+
 							s->map.bitflags[idx] |= FLAG_CELL_HAS_ITEM;
 						}
 
@@ -207,9 +208,12 @@ static int player_do_idle_action(struct game_state *s)
 
 		if (type == TASK_FETCH) {
 			unsigned int target_item_type = ITEM_NONE;
+			int target_item_idx = -1;
+
 			for (int i = 0; i < s->items.count; i++) {
 				if (s->items.wx[i] == tx && s->items.wy[i] == ty) {
 					target_item_type = s->items.type[i];
+					target_item_idx = i;
 					break;
 				}
 			}
@@ -217,6 +221,9 @@ static int player_do_idle_action(struct game_state *s)
 			if (target_item_type == ITEM_NONE || 
 					!is_pilearea_available(s, target_item_type, NULL, NULL)) {
 				s->tasks.is_active[task_id] = 0;
+
+				if (target_item_idx != -1)
+					s->items.bitflags[target_item_idx] &= ~FLAG_ITEM_RESERVED;
 				continue;
 			}
 		}
