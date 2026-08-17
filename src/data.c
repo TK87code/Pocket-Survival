@@ -26,16 +26,11 @@ struct item_def item_defs[] = {
 };
 
 struct task_def task_defs[] = {
-	[TASK_CHOP_TREE] = 	{SEC2TICK(5.0), WORK_FORESTRY, FLAG_TASK_PRODUCTIVE},
-	[TASK_MINE_ROCK] = 	{SEC2TICK(8.0), WORK_MINING, FLAG_TASK_PRODUCTIVE},
-	[TASK_MOW_GRASS] =	{SEC2TICK(1.0), WORK_FORESTRY, 0x00},
-	[TASK_HAUL] =		{SEC2TICK(0.0), WORK_HAULING, 0x00},
-};
-
-struct work_def work_defs[] = {
-	[WORK_FORESTRY] =	{100},
-	[WORK_MINING] =		{200},
-	[WORK_HAULING] =	{300},
+	[TASK_CHOP_TREE] = 	{1000, SEC2TICK(5.0), 1, FLAG_TASK_PRODUCTIVE},
+	[TASK_MINE_ROCK] = 	{2000, SEC2TICK(8.0), 1, FLAG_TASK_PRODUCTIVE},
+	[TASK_MOW_GRASS] =	{3000, SEC2TICK(2.0), 1, 0x00},
+	[TASK_FETCH] =		{4000, SEC2TICK(1.0), 0, 0x00},
+	[TASK_DROP] =		{0,    SEC2TICK(1.0), 0, 0x00},
 };
 
 struct drop_def drop_defs[] = {

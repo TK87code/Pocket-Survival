@@ -65,8 +65,6 @@ enum object_type {
 	OBJ_GRASS,
 };
 
-#define MAX_DROPPED_ITEM 1024
-
 enum item_type {
 	ITEM_ALL = 0,
 	ITEM_NONE,
@@ -78,24 +76,14 @@ enum player_state {
 	PLAYER_STATE_IDLE = 0,
 	PLAYER_STATE_MOVE,
 	PLAYER_STATE_WORK,
-	PLAYER_STATE_HAUL_FETCH,
-	PLAYER_STATE_HAUL_DELIVER,
-};
-
-#define MAX_TASK 256
-
-enum work_type {
-	WORK_FORESTRY,
-	WORK_MINING,
-	WORK_CONSTRUCTION,
-	WORK_HAULING,
 };
 
 enum task_type {
 	TASK_CHOP_TREE,
 	TASK_MINE_ROCK,
 	TASK_MOW_GRASS,
-	TASK_HAUL,
+	TASK_FETCH,
+	TASK_DROP,
 };
 
 #define FLAG_CELL_OBSTRACT (1 << 0)
@@ -118,25 +106,35 @@ struct player { // bytes
 	int16_t wait_timer;
 	int16_t current_task_id;	// current task id
 	uint8_t state;			// current AI state
+	
+	int16_t move_dest_wx;
+	int16_t move_dest_wy;
+	int16_t stop_dist;
+	uint8_t next_action; // enum player_action
+
 	uint8_t carrying_item;		// enum item_type
 	uint8_t carrying_item_amount;
 };
 
-struct item { // 8 bytes
-	int16_t x;
-	int16_t y;
-	uint16_t amount;
-	uint8_t type;
-	uint8_t is_stored;
+#define MAX_DROPPED_ITEM 1024
+
+#define FLAG_ITEM_STORED (1 << 0)
+struct item_data {
+	int16_t count;
+	int16_t wx[MAX_DROPPED_ITEM];
+	int16_t wy[MAX_DROPPED_ITEM];
+	uint8_t amount[MAX_DROPPED_ITEM];
+	uint8_t type[MAX_DROPPED_ITEM];
+	uint8_t bitflags[MAX_DROPPED_ITEM];
 };
 
-struct task { // 10 + 2 bytes
-	int16_t target_wx;
-	int16_t target_wy;
-	int16_t dest_wx;
-	int16_t dest_wy;
-	uint8_t type;		 //enum task_type
-	uint8_t is_active;
+#define MAX_TASK 255
+struct task_data { 
+	int16_t target_wx[MAX_TASK];
+	int16_t target_wy[MAX_TASK];
+	uint8_t type[MAX_TASK];		 //enum task_type
+	uint8_t is_active[MAX_TASK];
+	uint8_t count;	
 };
 
 #define MAX_PILE_AREA 128
@@ -186,9 +184,10 @@ struct item_def { // 12 bytes
 };
 
 #define FLAG_TASK_PRODUCTIVE (1 << 0)
-struct task_def { // 4 bytes
+struct task_def { 
+	int16_t base_prio_score;
 	uint16_t required_ticks;
-	uint8_t work_type;
+	int8_t stop_dist; // Specifies wether to top at the destination, or 1 cell away.
 	uint8_t bitflags;
 };
 
@@ -217,7 +216,8 @@ struct dragging_context { // 13 + 3 bytes
 
 struct game_state {
 	struct map_data map;
-	struct item items[MAX_DROPPED_ITEM];
+	struct item_data items;
+	struct task_data tasks;
 	struct pile_area pile_areas[MAX_PILE_AREA];
 	struct player player;
 	struct pkt_window win_map;
@@ -227,7 +227,6 @@ struct game_state {
 	struct astar_context *astar_ctx;
 	struct dragging_context drag_ctx;
 
-	struct task task_queue[MAX_TASK];
 	struct biheap_node task_heap_buffer[MAX_TASK];
 	struct biheap_manager task_heap;
 	
@@ -237,7 +236,6 @@ struct game_state {
 	float time_scale;
 
 	int task_count;
-	int dropped_item_count;
 	int pile_area_count;
 
 	int cursor_lx;

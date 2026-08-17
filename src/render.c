@@ -140,9 +140,8 @@ void draw_player(struct game_state *s)
 
 	// Slash animation
 	if (p->state == PLAYER_STATE_WORK) {
-		struct task *ts = &s->task_queue[p->current_task_id];	
-		int sx = ts->target_wx - s->cam_x;
-		int sy = ts->target_wy - s->cam_y;
+		int sx = s->tasks.target_wx[p->current_task_id] - s->cam_x;
+		int sy = s->tasks.target_wy[p->current_task_id] - s->cam_y;
 
 		if (sx >= 0 && sx < VIEWPORT_COLS && sy >= 0 && sy < VIEWPORT_ROWS) {
 			if ((s->global_ticks / 30) % 2 == 0) { 
@@ -154,14 +153,13 @@ void draw_player(struct game_state *s)
 
 inline void draw_items(struct game_state *s)
 {
-	for (int i = 0; i < s->dropped_item_count; i++) {
-		struct item *itm = &s->items[i];
-		int lx = itm->x - s->cam_x;
-		int ly = itm->y - s->cam_y;
+	for (int i = 0; i < s->items.count; i++) {
+		int lx = s->items.wx[i] - s->cam_x;
+		int ly = s->items.wy[i] - s->cam_y;
 
 		if (lx >= 0 && lx < VIEWPORT_COLS && ly >= 0 && ly < VIEWPORT_ROWS) {
-			const struct item_def *d = &item_defs[itm->type]; 
-			unsigned int bc = override_bc(s, itm->x, itm->y, d->bc); 
+			const struct item_def *d = &item_defs[s->items.type[i]]; 
+			unsigned int bc = override_bc(s, s->items.wx[i], s->items.wy[i], d->bc); 
 
 			if (d->sym_str != NULL)
 				pkt_win_puts_color(&s->win_map, lx, ly, d->fc, bc, d->attr, d->sym_str);

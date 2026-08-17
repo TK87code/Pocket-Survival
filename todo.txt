@@ -1,0 +1,2 @@
+- [bug] slashing animation when it isnt needed
+- [bug] need to search dropped items when new pile area created 
