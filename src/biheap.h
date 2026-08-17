@@ -51,10 +51,32 @@ int biheap_init(struct biheap_manager *manager, struct biheap_node *buffer, size
  *
  * @param  manager A pointer to biheap_manager struct
  * @param  id ID of the element.
- * @param  score The score used to determing the position of the element inside of the array.
+ * @param  score The score used to determining the position of the element inside of the array.
  *
  * @return 0 on success. Errors: -1 invalid manager pointer. -2 exceed capacity limit.
  */
 int biheap_push(struct biheap_manager *manager, unsigned int id, int score);
+
+/**
+ * @brief  Pops the highest score element from the binary heap.
+ *
+ * @param  manager A pointer to the biheap_manager structure.
+ * @param  out_id A pointer to store the popped element's ID. Can be NULL.
+ * @param  out_score A pointer to store the popped elements score. Can be NULL.
+ *
+ * @return 0 on success. Errors: -1 invalid manager pointer. -2 heap is empty.
+ */
+int biheap_pop(struct biheap_manager *manager, unsigned int *out_id, int *out_score);
+
+/**
+ * @brief  Updates the score of an existing element in the heap.
+ *
+ * @param  manager A pointer to the biheap_manager structure.
+ * @param  id The ID of the element to update.
+ * @param  new_score The new score to assign to the element.
+ *
+ * @return 0 on success. Errors: -1 invalid manager. -2 heap is empty. -3 element not found.
+ */
+int biheap_update(struct biheap_manager *manager, unsigned int id, int new_score);
 
 #endif // BIHEAP_H

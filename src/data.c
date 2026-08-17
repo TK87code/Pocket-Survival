@@ -29,6 +29,13 @@ struct task_def task_defs[] = {
 	[TASK_CHOP_TREE] = 	{SEC2TICK(5.0), WORK_FORESTRY, FLAG_TASK_PRODUCTIVE},
 	[TASK_MINE_ROCK] = 	{SEC2TICK(8.0), WORK_MINING, FLAG_TASK_PRODUCTIVE},
 	[TASK_MOW_GRASS] =	{SEC2TICK(1.0), WORK_FORESTRY, 0x00},
+	[TASK_HAUL] =		{SEC2TICK(0.0), WORK_HAULING, 0x00},
+};
+
+struct work_def work_defs[] = {
+	[WORK_FORESTRY] =	{100},
+	[WORK_MINING] =		{200},
+	[WORK_HAULING] =	{300},
 };
 
 struct drop_def drop_defs[] = {

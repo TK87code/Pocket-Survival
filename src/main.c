@@ -11,8 +11,6 @@
 #include <stdlib.h>	// atoi
 #include <string.h>	// memset
 
-#define ASTAR_OPTIMIZE_16BIT
-
 enum scenes {
 	SCENE_TITLE,
 	SCENE_PLAY,
@@ -82,8 +80,10 @@ void game_init(void *user_data)
 	void *astar_buffer = malloc(req_mem);
 	s->astar_ctx = astar_init(MAP_COLS, MAP_ROWS, astar_buffer);
 
+	biheap_init(&s->task_heap, s->task_heap_buffer, MAX_TASK, MIN_HEAP); 
+
 	generate_map(s);	
-	
+
 	s->player = (struct player) {
 		.wx = 40,
 		.wy = 12,
@@ -143,13 +143,10 @@ void game_draw(void *user_data)
 	draw_ingame_clock(s);
 	draw_speed_indicator(s);
 
-	for (int ly = 0; ly < VIEWPORT_ROWS; ly++) {
-		for (int lx = 0; lx < VIEWPORT_COLS; lx++) {
-			draw_terrains(s, lx, ly);
-			draw_objects(s, lx, ly);
-			draw_overlays(s, lx, ly);
-		}
-	}
+	draw_terrains(s);
+	draw_objects(s);
+	draw_overlays(s);
+
 	draw_items(s);
 	draw_player(s);
 
@@ -262,8 +259,9 @@ static void drag_update(struct game_state *s)
 	if (s->mode == MODE_PILE) {
 		for (int wy = s->drag_ctx.min_wy; wy <= s->drag_ctx.max_wy; wy++) {
 			for (int wx = s->drag_ctx.min_wx; wx <= s->drag_ctx.max_wx; wx++) {
-				struct map_cell c = s->map[wy][wx];	
-				if (c.object != OBJ_NONE || c.bitflags != 0) {
+				uint8_t o = s->map.objects[get_map_index(wx, wy)];
+				uint8_t flags = s->map.bitflags[get_map_index(wx,wy)];
+				if (o != OBJ_NONE || flags != 0) {
 					s->drag_ctx.bitflags |= FLAG_DRAG_RESTRICTED;
 					return;
 				}	
@@ -277,18 +275,18 @@ static void drag_end(struct game_state *s)
 	const struct dragging_context *dc = &s->drag_ctx;
 	for (int wy = dc->min_wy; wy <= dc->max_wy; wy++) {
 		for (int wx = dc->min_wx; wx <= dc->max_wx; wx++) {
-			struct map_cell *c = &s->map[wy][wx];
+			unsigned int o = s->map.objects[get_map_index(wx, wy)];	
 			switch (s->mode) {
 				case MODE_DEFAULT:
 					break;
 					
 				case MODE_DESIGNATE:
-					if (c->object != OBJ_NONE && (dc->target_mask & (1 << c->object)))
-						queue_task(s, wx, wy);
+					if (o != OBJ_NONE && (dc->target_mask & (1 << o)))
+						queue_task(s, wx, wy, object_defs[o].associated_task);
 					break;
 
 				case MODE_PILE:
-					c->bitflags |= FLAG_CELL_PILE_AREA;
+					s->map.bitflags[get_map_index(wx, wy)] |= FLAG_CELL_PILE_AREA;
 					break;
 			}
 		}
@@ -305,14 +303,11 @@ static void drag_end(struct game_state *s)
 	}
 
 	memset(&s->drag_ctx, 0, sizeof(struct dragging_context)); 
-	//s->drag_ctx.target_mask = 0;
-	//s->drag_ctx.bitflags = 0;
 }
 
 static void return_to_mode_default(struct game_state *s)
 {
 	memset(&s->drag_ctx, 0, sizeof(struct dragging_context)); 
-	//s->drag_ctx.bitflags &= ~FLAG_DRAG_ACTIVE;
 	s->mode = MODE_DEFAULT;
 	s->time_scale = 1.0f;
 	s->cursor_lx = VIEWPORT_COLS / 2;

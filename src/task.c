@@ -1,12 +1,13 @@
 #include "task.h"
 #include "defines.h"
 #include "data.h"
+#include "biheap.h"
 
-void queue_task(struct game_state *s, int wx, int wy)
+void queue_task(struct game_state *s, int wx, int wy, unsigned int task_type)
 {
-	struct map_cell *c = &s->map[wy][wx];
+	unsigned int *f = (unsigned int *)&s->map.bitflags[get_map_index(wx, wy)];
 
-	if (c->bitflags & FLAG_CELL_MARKED)
+	if (*f & FLAG_CELL_MARKED)
 		return;
 
 	int slot_index = -1;
@@ -25,12 +26,14 @@ void queue_task(struct game_state *s, int wx, int wy)
 
 	if (slot_index != -1) {
 		struct task *ts = &s->task_queue[slot_index];
-		ts->type = object_defs[c->object].associated_task;
+		ts->type = task_type;
 		ts->target_wx = wx;
 		ts->target_wy = wy;
 		ts->dest_wx = -1;
 		ts->dest_wy = -1;
 		ts->is_active = 1;
-		c->bitflags |= FLAG_CELL_MARKED;
+		*f |= FLAG_CELL_MARKED;
+
+		biheap_push(&s->task_heap, (unsigned int)slot_index, work_defs[ts->type].prio_score); 
 	}
 }

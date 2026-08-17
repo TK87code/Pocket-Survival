@@ -63,53 +63,67 @@ void draw_speed_indicator(struct game_state *s)
 		pkt_win_printf_color(&s->win_log, 2, 0, 16, 6, PKT_ATTR_BOLD, "SPEED: x%.1f", s->time_scale);	
 }
 
-void draw_terrains(struct game_state *s, int lx, int ly)
+void draw_terrains(struct game_state *s)
 {
-	int wx = s->cam_x + lx;
-	int wy = s->cam_y + ly;
-	struct map_cell c = s->map[wy][wx];
+	for (int ly = 0; ly < VIEWPORT_ROWS; ly++) {
+		for (int lx = 0; lx < VIEWPORT_COLS; lx++) {
+			int wx = s->cam_x + lx;
+			int wy = s->cam_y + ly;
 
-	char sym = terrain_defs[c.terrain].sym;
-	unsigned int fc = terrain_defs[c.terrain].fc;
-	unsigned int bc = override_bc(s, wx, wy, terrain_defs[c.terrain].bc);
+			unsigned int t = (unsigned int)s->map.terrains[get_map_index(wx, wy)];
 
-	diversify_terrains(wx, wy, &sym, &fc, c.terrain);	
+			char sym = terrain_defs[t].sym;
+			unsigned int fc = terrain_defs[t].fc;
+			unsigned int bc = override_bc(s, wx, wy, terrain_defs[t].bc);
 
-	pkt_win_putc_color(&s->win_map, lx, ly, (enum pkt_color)fc, bc, PKT_ATTR_NONE, sym);
-}
-
-void draw_objects(struct game_state *s, int lx, int ly)
-{
-	int wx = s->cam_x + lx;
-	int wy = s->cam_y + ly;
-	struct map_cell c = s->map[wy][wx];
-
-	if (c.object != OBJ_NONE) {
-		const struct object_def *od = &object_defs[c.object];
-		unsigned int bc = override_bc(s, wx, wy, od->bc);
-
-		if (od->sym_str != NULL)  
-			pkt_win_puts_color(&s->win_map, lx, ly, 
-					od->fc, bc, od->attr, od->sym_str); 
-		else
-			pkt_win_putc_color(&s->win_map, lx, ly, 
-					od->fc, bc, od->attr, od->sym_char); 
+			diversify_terrains(wx, wy, &sym, &fc, t);	
+			pkt_win_putc_color(&s->win_map, lx, ly, (enum pkt_color)fc, bc, PKT_ATTR_NONE, sym);
+		}
 	}
 }
 
-void draw_overlays(struct game_state *s, int lx, int ly)
+void draw_objects(struct game_state *s)
 {
-	int wx = s->cam_x + lx;
-	int wy = s->cam_y + ly;
-	struct map_cell c = s->map[wy][wx];
-	unsigned int bc = override_bc(s, wx, wy, 16);
+	for (int ly = 0; ly < VIEWPORT_ROWS; ly++) {
+		for (int lx = 0; lx < VIEWPORT_COLS; lx++) {
+			int wx = s->cam_x + lx;
+			int wy = s->cam_y + ly;
 
-	if (c.bitflags & FLAG_CELL_MARKED) {
-		pkt_win_puts_color(&s->win_map, lx, ly, 1, bc, PKT_ATTR_BOLD, "¤");
+			unsigned int o = (unsigned int)s->map.objects[get_map_index(wx, wy)];
+			if (o == OBJ_NONE)
+				continue;
+
+			const struct object_def *od = &object_defs[o];
+			unsigned int bc = override_bc(s, wx, wy, od->bc);
+
+			if (od->sym_str != NULL)  
+				pkt_win_puts_color(&s->win_map, lx, ly, 
+						od->fc, bc, od->attr, od->sym_str); 
+			else
+				pkt_win_putc_color(&s->win_map, lx, ly, 
+						od->fc, bc, od->attr, od->sym_char); 
+		}
 	}
+}
 
-	if (c.bitflags & FLAG_CELL_PILE_AREA) {
-		pkt_win_puts_color(&s->win_map, lx, ly, 102, bc, PKT_ATTR_BOLD, "░");	
+void draw_overlays(struct game_state *s)
+{
+	for (int ly = 0; ly < VIEWPORT_ROWS; ly++) {
+		for (int lx = 0; lx < VIEWPORT_COLS; lx++) {
+			int wx = s->cam_x + lx;
+			int wy = s->cam_y + ly;
+			unsigned int f = s->map.bitflags[get_map_index(wx, wy)];
+			if (f == 0)
+				continue;
+			
+			unsigned int bc = override_bc(s, wx, wy, 16);
+			if (f & FLAG_CELL_MARKED)
+				pkt_win_puts_color(&s->win_map, lx, ly, 1, bc, PKT_ATTR_BOLD, "¤");
+
+			if (f & FLAG_CELL_PILE_AREA) 
+				pkt_win_puts_color(&s->win_map, lx, ly, 102, bc, PKT_ATTR_BOLD, "░");	
+
+		}
 	}
 }
 

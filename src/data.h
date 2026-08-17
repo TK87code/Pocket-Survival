@@ -8,6 +8,7 @@ extern struct entity_def entity_defs[];
 extern struct object_def object_defs[];
 extern struct item_def item_defs[];
 extern struct task_def task_defs[];
+extern struct work_def work_defs[];
 extern struct drop_def drop_defs[];
 
 #endif //DATA_H

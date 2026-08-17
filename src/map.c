@@ -5,22 +5,22 @@
 
 void generate_map(struct game_state *s)
 {
-	for (int y = 0; y < MAP_ROWS; y++) {
-		for (int x = 0; x < MAP_COLS; x++) {
+	for (int wy = 0; wy < MAP_ROWS; wy++) {
+		for (int wx = 0; wx < MAP_COLS; wx++) {
 			unsigned int o = OBJ_NONE;
 
-			float e_base = value_noise_2d(x, y, s->seed, 200.f) * 0.8f;
-			float e_detail = value_noise_2d(x, y, s->seed + 123, 15.0f) * 0.2f;
+			float e_base = value_noise_2d(wx, wy, s->seed, 200.f) * 0.8f;
+			float e_detail = value_noise_2d(wx, wy, s->seed + 123, 15.0f) * 0.2f;
 			float elevation = e_base + e_detail;
 
-			float m_base = value_noise_2d(x, y, s->seed + 1234, 150.0f) * 0.8f;
-			float m_detail = value_noise_2d(x, y, s->seed + 12345, 10.0f) * 0.2f;
+			float m_base = value_noise_2d(wx, wy, s->seed + 1234, 150.0f) * 0.8f;
+			float m_detail = value_noise_2d(wx, wy, s->seed + 12345, 10.0f) * 0.2f;
 			float moisture = m_base + m_detail;
 
-			float dent = value_noise_2d(x, y, s->seed + 999, 20.0f);
+			float dent = value_noise_2d(wx, wy, s->seed + 999, 20.0f);
 
-			float richness = value_noise_2d(x, y, s->seed + 444, 100.0f);
-			float o_dice = hash2d(x, y, s->seed);
+			float richness = value_noise_2d(wx, wy, s->seed + 444, 100.0f);
+			float o_dice = hash2d(wx, wy, s->seed);
 
 			unsigned int t = TERRAIN_SOIL;
 
@@ -56,11 +56,12 @@ void generate_map(struct game_state *s)
 				}
 			}
 
-			s->map[y][x].terrain = (uint8_t)t;
-			s->map[y][x].object = (uint8_t)o;
-			s->map[y][x].bitflags = terrain_defs[t].bitflags;
+			s->map.terrains[get_map_index(wx, wy)] = (uint8_t)t;
+			s->map.objects[get_map_index(wx, wy)] = (uint8_t)o;
+			s->map.bitflags[get_map_index(wx, wy)] = terrain_defs[t].bitflags;
+
 			if (object_defs[o].bitflags & FLAG_OBJ_OBSTRACT)
-				s->map[y][x].bitflags |= FLAG_CELL_OBSTRACT;
+				s->map.bitflags[get_map_index(wx, wy)] |= FLAG_CELL_OBSTRACT;
 		}
 	}
 }

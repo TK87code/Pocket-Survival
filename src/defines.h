@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include "ext/pkt_win.h"
 #include "pathfind.h"
+#include "biheap.h"
 
 #define FPS 60
 
@@ -30,7 +31,15 @@
 #define VIEWPORT_COLS 76
 #define VIEWPORT_ROWS 38
 
+static inline int get_map_index(int wx, int wy)
+{
+	return wy * MAP_COLS + wx;
+}
+
 #define MAX_ASTAR_PATH 128
+
+#define ASTAR_OPTIMIZE_16BIT
+#define BIHEAP_OPTIMIZE_16BIT
 
 enum command_mode {
 	MODE_DEFAULT = 0,
@@ -79,6 +88,7 @@ enum work_type {
 	WORK_FORESTRY,
 	WORK_MINING,
 	WORK_CONSTRUCTION,
+	WORK_HAULING,
 };
 
 enum task_type {
@@ -93,10 +103,10 @@ enum task_type {
 #define FLAG_CELL_PILE_AREA (1 << 2)
 #define FLAG_CELL_MARKED (1 << 3)
 
-struct map_cell { // 3 + 1 bytes
-	uint8_t object;		// enum object_type
-	uint8_t terrain;	// enum terrain_type
-	uint8_t bitflags;	
+struct map_data { 
+	uint8_t terrains[MAP_ROWS * MAP_COLS];	// enum terrain_type
+	uint8_t objects[MAP_ROWS * MAP_COLS];		// enum object_type
+	uint8_t bitflags[MAP_ROWS * MAP_COLS];	
 };
 
 struct player { // bytes 
@@ -182,6 +192,10 @@ struct task_def { // 4 bytes
 	uint8_t bitflags;
 };
 
+struct work_def { // 4 bytes;
+	int32_t prio_score;
+};
+
 struct drop_def { // 2 bytes
 	uint8_t item_type; // enum item_type
 	uint8_t amount;
@@ -202,9 +216,8 @@ struct dragging_context { // 13 + 3 bytes
 };
 
 struct game_state {
-	struct map_cell map[MAP_ROWS][MAP_COLS];
+	struct map_data map;
 	struct item items[MAX_DROPPED_ITEM];
-	struct task task_queue[MAX_TASK];
 	struct pile_area pile_areas[MAX_PILE_AREA];
 	struct player player;
 	struct pkt_window win_map;
@@ -213,6 +226,10 @@ struct game_state {
 	struct pkt_window win_log;
 	struct astar_context *astar_ctx;
 	struct dragging_context drag_ctx;
+
+	struct task task_queue[MAX_TASK];
+	struct biheap_node task_heap_buffer[MAX_TASK];
+	struct biheap_manager task_heap;
 	
 	uint64_t global_ticks;
 
