@@ -19,6 +19,11 @@ struct object_def object_defs[] = {
 	[OBJ_GRASS] =	{NULL, '"', 76, 16, PKT_ATTR_NONE, 0x00, TASK_MOW_GRASS}, 
 };
 
+struct entity_def entity_defs[] = {
+	[ENT_PLAYER] 	= {HUMAN_BASE_TICKS, '@', PKT_COLOR_WHITE, 16, PKT_ATTR_BOLD},
+	[ENT_DOG]	= {HUMAN_BASE_TICKS / 2, 'd', PKT_COLOR_WHITE, 16, PKT_ATTR_BOLD},
+};
+
 struct item_def item_defs[] = {
 	[ITEM_NONE] = 	{0},
 	[ITEM_WOOD] = 	{"≡", 0, 172, 16, PKT_ATTR_BOLD},
@@ -29,8 +34,8 @@ struct task_def task_defs[] = {
 	[TASK_CHOP_TREE] = 	{1000, SEC2TICK(5.0), 1, FLAG_TASK_PRODUCTIVE},
 	[TASK_MINE_ROCK] = 	{2000, SEC2TICK(8.0), 1, FLAG_TASK_PRODUCTIVE},
 	[TASK_MOW_GRASS] =	{3000, SEC2TICK(2.0), 1, 0x00},
-	[TASK_FETCH] =		{4000, SEC2TICK(1.0), 0, 0x00},
-	[TASK_DROP] =		{0,    SEC2TICK(1.0), 0, 0x00},
+	[TASK_FETCH] =		{4000, SEC2TICK(0.0), 0, 0x00},
+	[TASK_DROP] =		{0,    SEC2TICK(0.0), 0, 0x00},
 };
 
 struct drop_def drop_defs[] = {

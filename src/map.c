@@ -56,12 +56,12 @@ void generate_map(struct game_state *s)
 				}
 			}
 
-			s->map.terrains[get_map_index(wx, wy)] = (uint8_t)t;
-			s->map.objects[get_map_index(wx, wy)] = (uint8_t)o;
-			s->map.bitflags[get_map_index(wx, wy)] = terrain_defs[t].bitflags;
+			s->map.terrains[GET_IDX(wx, wy)] = (uint8_t)t;
+			s->map.objects[GET_IDX(wx, wy)] = (uint8_t)o;
+			s->map.bitflags[GET_IDX(wx, wy)] = terrain_defs[t].bitflags;
 
 			if (object_defs[o].bitflags & FLAG_OBJ_OBSTRACT)
-				s->map.bitflags[get_map_index(wx, wy)] |= FLAG_CELL_OBSTRACT;
+				s->map.bitflags[GET_IDX(wx, wy)] |= FLAG_CELL_OBSTRACT;
 		}
 	}
 }

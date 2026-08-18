@@ -6,6 +6,10 @@
 #include "pathfind.h"
 #include "biheap.h"
 
+#define INVALID_IDX UINT16_MAX
+#define ASTAR_OPTIMIZE_16BIT
+#define BIHEAP_OPTIMIZE_16BIT
+
 #define FPS 60
 
 // Time and Time scales
@@ -14,10 +18,10 @@
 
 // Game world laws of physics
 #define METERS_PER_CELL 2
-#define PLAYER_SPEED_M_PER_MIN 60
-#define CELLS_PER_MIN (PLAYER_SPEED_M_PER_MIN / METERS_PER_CELL)
+#define HUMAN_SPEED_M_PER_MIN 60
+#define CELLS_PER_MIN (HUMAN_SPEED_M_PER_MIN / METERS_PER_CELL)
 
-#define PLAYER_BASE_TICKS (TICKS_PER_GAME_MINUTE / CELLS_PER_MIN)
+#define HUMAN_BASE_TICKS (TICKS_PER_GAME_MINUTE / CELLS_PER_MIN)
 
 #define TARGET_TICK_PER_SEC 60.0f
 #define TICK_INTERVAL (1.0f / TARGET_TICK_PER_SEC)
@@ -31,15 +35,10 @@
 #define VIEWPORT_COLS 76
 #define VIEWPORT_ROWS 38
 
-static inline int get_map_index(int wx, int wy)
-{
-	return wy * MAP_COLS + wx;
-}
-
-#define MAX_ASTAR_PATH 128
-
-#define ASTAR_OPTIMIZE_16BIT
-#define BIHEAP_OPTIMIZE_16BIT
+// Helper macros
+#define GET_IDX(wx, wy) (wy * MAP_COLS + wx)
+#define IDX_TO_WX(idx) ((idx) % MAP_COLS)
+#define IDX_TO_WY(idx) ((idx) / MAP_COLS)
 
 enum command_mode {
 	MODE_DEFAULT = 0,
@@ -72,6 +71,11 @@ enum item_type {
 	ITEM_STONE,
 };
 
+enum entity_type {
+	ENT_PLAYER = 0,
+	ENT_DOG,
+};
+
 enum player_state {
 	PLAYER_STATE_IDLE = 0,
 	PLAYER_STATE_MOVE,
@@ -95,35 +99,36 @@ struct map_data {
 	uint8_t terrains[MAP_ROWS * MAP_COLS];	// enum terrain_type
 	uint8_t objects[MAP_ROWS * MAP_COLS];		// enum object_type
 	uint8_t bitflags[MAP_ROWS * MAP_COLS];	
+	uint16_t item_idx[MAP_ROWS * MAP_COLS];
 };
 
-struct player { // bytes 
-	struct astar_pos path[MAX_ASTAR_PATH];
-	int16_t path_len;
-	int16_t path_index;
-	int16_t wx;
-	int16_t wy;
-	int16_t wait_timer;
-	int16_t current_task_id;	// current task id
-	uint8_t state;			// current AI state
-	
-	int16_t move_dest_wx;
-	int16_t move_dest_wy;
-	int16_t stop_dist;
-	uint8_t next_action; // enum player_action
+#define MAX_ASTAR_PATH 128
 
-	uint8_t carrying_item;		// enum item_type
-	uint8_t carrying_item_amount;
+#define MAX_ENTITY 128
+
+struct entity_data {  
+	struct astar_pos path[MAX_ENTITY][MAX_ASTAR_PATH];
+	int16_t count;
+	int16_t path_len[MAX_ENTITY];
+	int16_t path_index[MAX_ENTITY];
+	int16_t wx[MAX_ENTITY];
+	int16_t wy[MAX_ENTITY];
+	int16_t wait_timer[MAX_ENTITY];
+	int16_t current_task_id[MAX_ENTITY];	// current task id
+	uint8_t state[MAX_ENTITY];			// current AI state
+	uint8_t carrying_item[MAX_ENTITY];		// enum item_type
+	uint8_t carrying_item_amount[MAX_ENTITY];
+	uint8_t type[MAX_ENTITY];
 };
 
 #define MAX_DROPPED_ITEM 1024
 
 #define FLAG_ITEM_STORED (1 << 0)
 #define FLAG_ITEM_RESERVED (1 << 1)
+
 struct item_data {
 	int16_t count;
-	int16_t wx[MAX_DROPPED_ITEM];
-	int16_t wy[MAX_DROPPED_ITEM];
+	uint16_t map_idx[MAX_DROPPED_ITEM];
 	uint8_t amount[MAX_DROPPED_ITEM];
 	uint8_t type[MAX_DROPPED_ITEM];
 	uint8_t bitflags[MAX_DROPPED_ITEM];
@@ -131,8 +136,7 @@ struct item_data {
 
 #define MAX_TASK 255
 struct task_data { 
-	int16_t target_wx[MAX_TASK];
-	int16_t target_wy[MAX_TASK];
+	uint16_t target_map_idx[MAX_TASK];
 	uint8_t type[MAX_TASK];		 //enum task_type
 	uint8_t is_active[MAX_TASK];
 	uint8_t count;	
@@ -192,10 +196,6 @@ struct task_def {
 	uint8_t bitflags;
 };
 
-struct work_def { // 4 bytes;
-	int32_t prio_score;
-};
-
 struct drop_def { // 2 bytes
 	uint8_t item_type; // enum item_type
 	uint8_t amount;
@@ -219,8 +219,8 @@ struct game_state {
 	struct map_data map;
 	struct item_data items;
 	struct task_data tasks;
+	struct entity_data entities;
 	struct pile_area pile_areas[MAX_PILE_AREA];
-	struct player player;
 	struct pkt_window win_map;
 	struct pkt_window win_status;
 	struct pkt_window win_command;

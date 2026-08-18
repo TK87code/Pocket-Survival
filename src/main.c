@@ -20,6 +20,7 @@ static void game_init(void *user_data);
 static void game_update(void *user_data, float dt);
 static void game_draw(void *user_data);
 static void handle_input(struct game_state *s, int key_code);
+static inline void init_player(struct game_state *s);
 static inline void handle_mode_default_input(struct game_state *s, int key_code);
 static inline void handle_mode_designate_input(struct game_state *s, int key_code);
 static inline void handle_mode_pile_input(struct game_state *s, int key_code);
@@ -83,6 +84,9 @@ static void game_init(void *user_data)
 	s->cursor_lx = VIEWPORT_COLS / 2;
 	s->cursor_ly = VIEWPORT_ROWS / 2;
 
+	for (int i = 0; i < MAP_ROWS * MAP_COLS; i++)
+		s->map.item_idx[i] = INVALID_IDX;
+
 	size_t req_mem = astar_get_req_memsize(MAP_COLS, MAP_ROWS);
 	void *astar_buffer = malloc(req_mem);
 	s->astar_ctx = astar_init(MAP_COLS, MAP_ROWS, astar_buffer);
@@ -91,15 +95,7 @@ static void game_init(void *user_data)
 
 	generate_map(s);	
 
-	s->player = (struct player) {
-		.wx = 40,
-		.wy = 12,
-		.state = PLAYER_STATE_IDLE,
-		.current_task_id = -1,
-		.wait_timer = 0,
-		.carrying_item = ITEM_NONE,
-		.carrying_item_amount = 0,
-	};
+	init_player(s);
 }
 
 static void game_update(void *user_data, float dt)
@@ -140,7 +136,7 @@ void game_draw(void *user_data)
 	draw_overlays(s);
 
 	draw_items(s);
-	draw_player(s);
+	draw_entities(s);
 
 	if (s->mode == MODE_DESIGNATE || s->mode == MODE_PILE)
 		draw_cursor(s);
@@ -192,8 +188,8 @@ static void drag_update(struct game_state *s)
 	if (s->mode == MODE_PILE) {
 		for (int wy = s->drag_ctx.min_wy; wy <= s->drag_ctx.max_wy; wy++) {
 			for (int wx = s->drag_ctx.min_wx; wx <= s->drag_ctx.max_wx; wx++) {
-				uint8_t o = s->map.objects[get_map_index(wx, wy)];
-				uint8_t flags = s->map.bitflags[get_map_index(wx,wy)];
+				uint8_t o = s->map.objects[GET_IDX(wx, wy)];
+				uint8_t flags = s->map.bitflags[GET_IDX(wx,wy)];
 				if (o != OBJ_NONE || flags != 0) {
 					s->drag_ctx.bitflags |= FLAG_DRAG_RESTRICTED;
 					return;
@@ -208,7 +204,7 @@ static void drag_end(struct game_state *s)
 	const struct dragging_context *dc = &s->drag_ctx;
 	for (int wy = dc->min_wy; wy <= dc->max_wy; wy++) {
 		for (int wx = dc->min_wx; wx <= dc->max_wx; wx++) {
-			unsigned int o = s->map.objects[get_map_index(wx, wy)];	
+			unsigned int o = s->map.objects[GET_IDX(wx, wy)];	
 			switch (s->mode) {
 				case MODE_DEFAULT:
 					break;
@@ -219,7 +215,7 @@ static void drag_end(struct game_state *s)
 					break;
 
 				case MODE_PILE:
-					s->map.bitflags[get_map_index(wx, wy)] |= FLAG_CELL_PILE_AREA;
+					s->map.bitflags[GET_IDX(wx, wy)] |= FLAG_CELL_PILE_AREA;
 					break;
 			}
 		}
@@ -397,7 +393,24 @@ static inline void search_remained_dropped_items(struct game_state *s)
 	for (int i = 0; i < s->items.count; i++) {
 		if ((s->items.bitflags[i] & (FLAG_ITEM_STORED | FLAG_ITEM_RESERVED)) == 0) {
 			s->items.bitflags[i] |= FLAG_ITEM_RESERVED;
-			queue_task(s, s->items.wx[i], s->items.wy[i], TASK_FETCH);
+			int wx = IDX_TO_WX(s->items.map_idx[i]);
+			int wy = IDX_TO_WY(s->items.map_idx[i]);
+			PKT_LOG(PKT_LOG_INFO, 
+				"Found remained item on the ground at %d, %d. Issuing fetch task.", wx, wy);
+			queue_task(s, wx, wy, TASK_FETCH);
 		}
 	}
+}
+
+static inline void init_player(struct game_state *s)
+{
+	s->entities.wx[0] = 40;
+	s->entities.wy[0] = 12;
+	s->entities.state[0] = PLAYER_STATE_IDLE;
+	s->entities.current_task_id[0] = -1;
+	s->entities.wait_timer[0] = 0;
+	s->entities.carrying_item[0] = ITEM_NONE;
+	s->entities.carrying_item_amount[0] = 0;
+	s->entities.type[0] = 0;
+	s->entities.count += 1;
 }

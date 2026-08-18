@@ -70,7 +70,7 @@ void draw_terrains(struct game_state *s)
 			int wx = s->cam_x + lx;
 			int wy = s->cam_y + ly;
 
-			unsigned int t = (unsigned int)s->map.terrains[get_map_index(wx, wy)];
+			unsigned int t = (unsigned int)s->map.terrains[GET_IDX(wx, wy)];
 
 			char sym = terrain_defs[t].sym;
 			unsigned int fc = terrain_defs[t].fc;
@@ -89,7 +89,7 @@ void draw_objects(struct game_state *s)
 			int wx = s->cam_x + lx;
 			int wy = s->cam_y + ly;
 
-			unsigned int o = (unsigned int)s->map.objects[get_map_index(wx, wy)];
+			unsigned int o = (unsigned int)s->map.objects[GET_IDX(wx, wy)];
 			if (o == OBJ_NONE)
 				continue;
 
@@ -112,7 +112,7 @@ void draw_overlays(struct game_state *s)
 		for (int lx = 0; lx < VIEWPORT_COLS; lx++) {
 			int wx = s->cam_x + lx;
 			int wy = s->cam_y + ly;
-			unsigned int f = s->map.bitflags[get_map_index(wx, wy)];
+			unsigned int f = s->map.bitflags[GET_IDX(wx, wy)];
 			if (f == 0)
 				continue;
 			
@@ -127,25 +127,36 @@ void draw_overlays(struct game_state *s)
 	}
 }
 
-void draw_player(struct game_state *s)
+void draw_entities(struct game_state *s)
 {
-	struct player *p = &s->player;
-	unsigned int bc = override_bc(s, p->wx, p->wy, 16);
+	struct entity_data *e = &s->entities;
+	for (int eid = 0; eid < e->count; eid++) {
+		uint8_t etype = e->type[eid];
+		unsigned int bc = override_bc(s, e->wx[eid], e->wy[eid], entity_defs[etype].bc);
+		int lx = e->wx[eid] - s->cam_x;
+		int ly = e->wy[eid] - s->cam_y;
 
-	int lx = p->wx - s->cam_x;
-	int ly = p->wy - s->cam_y;
+		if (lx >= 0 && lx < VIEWPORT_COLS && ly >= 0 && ly < VIEWPORT_ROWS) {
+			pkt_win_putc_color(&s->win_map, lx, ly,	
+					entity_defs[etype].fc, bc, entity_defs[etype].attr, 
+					entity_defs[etype].sym);
+		}
 
-	if (lx >= 0 && lx < VIEWPORT_COLS && ly >= 0 && ly < VIEWPORT_ROWS) 
-		pkt_win_putc_color(&s->win_map, lx, ly,	PKT_COLOR_WHITE, bc, PKT_ATTR_NONE, '@');
+		// Slash animation
+		if (e->state[eid] == PLAYER_STATE_WORK) {
+			int16_t tid = e->current_task_id[eid];	
+			int is_task_fetch = (s->tasks.type[tid] == TASK_FETCH);
+			int is_task_drop = (s->tasks.type[tid] == TASK_DROP);
+			if ( is_task_fetch || is_task_drop)  
+				continue;
 
-	// Slash animation
-	if (p->state == PLAYER_STATE_WORK) {
-		int sx = s->tasks.target_wx[p->current_task_id] - s->cam_x;
-		int sy = s->tasks.target_wy[p->current_task_id] - s->cam_y;
+			unsigned int idx = s->tasks.target_map_idx[e->current_task_id[eid]];
+			int sx = IDX_TO_WX(idx) - s->cam_x;
+			int sy = IDX_TO_WY(idx) - s->cam_y;
 
-		if (sx >= 0 && sx < VIEWPORT_COLS && sy >= 0 && sy < VIEWPORT_ROWS) {
-			if ((s->global_ticks / 30) % 2 == 0) { 
-				pkt_win_putc_color(&s->win_map, sx, sy, 220, 16, PKT_ATTR_BOLD, '/');
+			if (sx >= 0 && sx < VIEWPORT_COLS && sy >= 0 && sy < VIEWPORT_ROWS) {
+				if ((s->global_ticks / 30) % 2 == 0)  
+					pkt_win_putc_color(&s->win_map, sx, sy, 220, 16, PKT_ATTR_BOLD, '/');
 			}
 		}
 	}
@@ -154,12 +165,14 @@ void draw_player(struct game_state *s)
 inline void draw_items(struct game_state *s)
 {
 	for (int i = 0; i < s->items.count; i++) {
-		int lx = s->items.wx[i] - s->cam_x;
-		int ly = s->items.wy[i] - s->cam_y;
+		int wx = IDX_TO_WX(s->items.map_idx[i]);
+		int wy = IDX_TO_WY(s->items.map_idx[i]);
+		int lx = wx - s->cam_x;
+		int ly = wy - s->cam_y;
 
 		if (lx >= 0 && lx < VIEWPORT_COLS && ly >= 0 && ly < VIEWPORT_ROWS) {
 			const struct item_def *d = &item_defs[s->items.type[i]]; 
-			unsigned int bc = override_bc(s, s->items.wx[i], s->items.wy[i], d->bc); 
+			unsigned int bc = override_bc(s, wx, wy, d->bc); 
 
 			if (d->sym_str != NULL)
 				pkt_win_puts_color(&s->win_map, lx, ly, d->fc, bc, d->attr, d->sym_str);
