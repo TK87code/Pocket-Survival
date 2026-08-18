@@ -18,6 +18,10 @@ struct cmd_line {
 
 static void diversify_terrains(int wx, int wy, char *sym, unsigned int *fc, unsigned int t);
 static unsigned int override_bc(struct game_state *s, int wx, int wy, unsigned int bc);
+static inline void draw_terrain(struct game_state *s, int idx, int wx, int wy, int lx, int ly);
+static inline void draw_object(struct game_state *s, int idx, int wx, int wy, int lx, int ly);
+static inline void draw_item(struct game_state *s, int idx, int wx, int wy, int lx, int ly);
+static inline void draw_overlay(struct game_state *s, int idx, int wx, int wy, int lx, int ly);
 
 void draw_ingame_clock(struct game_state *s)
 {
@@ -63,68 +67,77 @@ void draw_speed_indicator(struct game_state *s)
 		pkt_win_printf_color(&s->win_log, 2, 0, 16, 6, PKT_ATTR_BOLD, "SPEED: x%.1f", s->time_scale);	
 }
 
-void draw_terrains(struct game_state *s)
+void draw_map_elements(struct game_state *s)
 {
-	for (int ly = 0; ly < VIEWPORT_ROWS; ly++) {
+	for(int ly = 0; ly < VIEWPORT_ROWS; ly++) {
 		for (int lx = 0; lx < VIEWPORT_COLS; lx++) {
 			int wx = s->cam_x + lx;
 			int wy = s->cam_y + ly;
+			int idx = GET_IDX(wx, wy);
 
-			unsigned int t = (unsigned int)s->map.terrains[GET_IDX(wx, wy)];
-
-			char sym = terrain_defs[t].sym;
-			unsigned int fc = terrain_defs[t].fc;
-			unsigned int bc = override_bc(s, wx, wy, terrain_defs[t].bc);
-
-			diversify_terrains(wx, wy, &sym, &fc, t);	
-			pkt_win_putc_color(&s->win_map, lx, ly, (enum pkt_color)fc, bc, PKT_ATTR_NONE, sym);
+			draw_terrain(s, idx, wx, wy, lx, ly);
+			draw_object(s, idx, wx, wy, lx, ly);
+			draw_overlay(s, idx, wx, wy, lx, ly);
+			draw_item(s, idx, wx, wy, lx, ly);
 		}
 	}
 }
 
-void draw_objects(struct game_state *s)
+static inline void draw_terrain(struct game_state *s, int idx, int wx, int wy, int lx, int ly)
 {
-	for (int ly = 0; ly < VIEWPORT_ROWS; ly++) {
-		for (int lx = 0; lx < VIEWPORT_COLS; lx++) {
-			int wx = s->cam_x + lx;
-			int wy = s->cam_y + ly;
+	unsigned int t = (unsigned int)s->map.terrains[idx];
+	char sym = terrain_defs[t].sym;
+	unsigned int fc = terrain_defs[t].fc;
+	unsigned int bc = override_bc(s, wx, wy, terrain_defs[t].bc);
 
-			unsigned int o = (unsigned int)s->map.objects[GET_IDX(wx, wy)];
-			if (o == OBJ_NONE)
-				continue;
-
-			const struct object_def *od = &object_defs[o];
-			unsigned int bc = override_bc(s, wx, wy, od->bc);
-
-			if (od->sym_str != NULL)  
-				pkt_win_puts_color(&s->win_map, lx, ly, 
-						od->fc, bc, od->attr, od->sym_str); 
-			else
-				pkt_win_putc_color(&s->win_map, lx, ly, 
-						od->fc, bc, od->attr, od->sym_char); 
-		}
-	}
+	diversify_terrains(wx, wy, &sym, &fc, t);	
+	pkt_win_putc_color(&s->win_map, lx, ly, (enum pkt_color)fc, bc, PKT_ATTR_NONE, sym);
 }
 
-void draw_overlays(struct game_state *s)
+static inline void draw_object(struct game_state *s, int idx, int wx, int wy, int lx, int ly)
 {
-	for (int ly = 0; ly < VIEWPORT_ROWS; ly++) {
-		for (int lx = 0; lx < VIEWPORT_COLS; lx++) {
-			int wx = s->cam_x + lx;
-			int wy = s->cam_y + ly;
-			unsigned int f = s->map.bitflags[GET_IDX(wx, wy)];
-			if (f == 0)
-				continue;
-			
-			unsigned int bc = override_bc(s, wx, wy, 16);
-			if (f & FLAG_CELL_MARKED)
-				pkt_win_puts_color(&s->win_map, lx, ly, 1, bc, PKT_ATTR_BOLD, "¤");
+	unsigned int o = (unsigned int)s->map.objects[idx];
+	if (o == OBJ_NONE)
+		return;
 
-			if (f & FLAG_CELL_PILE_AREA) 
-				pkt_win_puts_color(&s->win_map, lx, ly, 102, bc, PKT_ATTR_BOLD, "░");	
+	const struct object_def *od = &object_defs[o];
+	unsigned int bc = override_bc(s, wx, wy, od->bc);
 
-		}
-	}
+	if (od->sym_str != NULL)  
+		pkt_win_puts_color(&s->win_map, lx, ly, od->fc, bc, od->attr, od->sym_str); 
+	else
+		pkt_win_putc_color(&s->win_map, lx, ly, od->fc, bc, od->attr, od->sym_char); 
+}
+
+static inline void draw_item(struct game_state *s, int idx, int wx, int wy, int lx, int ly)
+{
+	uint16_t iid = s->map.item_idx[idx];
+	if (iid == INVALID_IDX)
+		return;
+
+	unsigned int itype = s->items.type[iid];
+	const struct item_def *d = &item_defs[itype]; 
+	unsigned int bc = override_bc(s, wx, wy, d->bc); 
+
+	if (d->sym_str != NULL)
+		pkt_win_puts_color(&s->win_map, lx, ly, d->fc, bc, d->attr, d->sym_str);
+	else
+		pkt_win_putc_color(&s->win_map, lx, ly, d->fc, bc, d->attr, d->sym_char);
+}
+
+static inline void draw_overlay(struct game_state *s, int idx, int wx, int wy, int lx, int ly)
+{
+	unsigned int f = s->map.bitflags[idx];
+	if (f == 0)
+		return;
+
+	unsigned int bc = override_bc(s, wx, wy, 16);
+	//TODO change background color when the cell marked
+	if (f & FLAG_CELL_MARKED)
+		pkt_win_puts_color(&s->win_map, lx, ly, 1, bc, PKT_ATTR_BOLD, "¤");
+
+	if (f & FLAG_CELL_PILE_AREA) 
+		pkt_win_puts_color(&s->win_map, lx, ly, 102, bc, PKT_ATTR_BOLD, "░");	
 }
 
 void draw_entities(struct game_state *s)
@@ -147,7 +160,7 @@ void draw_entities(struct game_state *s)
 			int16_t tid = e->current_task_id[eid];	
 			int is_task_fetch = (s->tasks.type[tid] == TASK_FETCH);
 			int is_task_drop = (s->tasks.type[tid] == TASK_DROP);
-			if ( is_task_fetch || is_task_drop)  
+			if (is_task_fetch || is_task_drop)  
 				continue;
 
 			unsigned int idx = s->tasks.target_map_idx[e->current_task_id[eid]];
@@ -158,26 +171,6 @@ void draw_entities(struct game_state *s)
 				if ((s->global_ticks / 30) % 2 == 0)  
 					pkt_win_putc_color(&s->win_map, sx, sy, 220, 16, PKT_ATTR_BOLD, '/');
 			}
-		}
-	}
-}
-
-inline void draw_items(struct game_state *s)
-{
-	for (int i = 0; i < s->items.count; i++) {
-		int wx = IDX_TO_WX(s->items.map_idx[i]);
-		int wy = IDX_TO_WY(s->items.map_idx[i]);
-		int lx = wx - s->cam_x;
-		int ly = wy - s->cam_y;
-
-		if (lx >= 0 && lx < VIEWPORT_COLS && ly >= 0 && ly < VIEWPORT_ROWS) {
-			const struct item_def *d = &item_defs[s->items.type[i]]; 
-			unsigned int bc = override_bc(s, wx, wy, d->bc); 
-
-			if (d->sym_str != NULL)
-				pkt_win_puts_color(&s->win_map, lx, ly, d->fc, bc, d->attr, d->sym_str);
-			else
-				pkt_win_putc_color(&s->win_map, lx, ly, d->fc, bc, d->attr, d->sym_char);
 		}
 	}
 }

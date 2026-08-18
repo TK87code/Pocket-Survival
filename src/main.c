@@ -131,11 +131,8 @@ void game_draw(void *user_data)
 	draw_ingame_clock(s);
 	draw_speed_indicator(s);
 
-	draw_terrains(s);
-	draw_objects(s);
-	draw_overlays(s);
+	draw_map_elements(s);
 
-	draw_items(s);
 	draw_entities(s);
 
 	if (s->mode == MODE_DESIGNATE || s->mode == MODE_PILE)

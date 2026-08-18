@@ -2,3 +2,5 @@
 bin
 pocket_log.txt
 document.txt
+todo.txt
+*.log

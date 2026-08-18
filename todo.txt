@@ -1,2 +1,3 @@
-- [bug] slashing animation when it isnt needed
-- [bug] need to search dropped items when new pile area created 
+- refactoring complete
+- change cell bc when marked
+- crafting
